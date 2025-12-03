@@ -137,7 +137,10 @@ struct NativeScreenProvider {
 #[cfg(feature = "native-capture")]
 impl NativeScreenProvider {
     fn new() -> Result<Self> {
-        let monitor = xcap::Monitor::new(0)?;
+        let monitors = xcap::Monitor::all()
+            .map_err(|e| anyhow::anyhow!("Failed to enumerate monitors: {}", e))?;
+        let monitor = monitors.into_iter().next()
+            .ok_or_else(|| anyhow::anyhow!("No monitors found"))?;
         Ok(Self { monitor })
     }
 }

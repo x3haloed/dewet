@@ -72,7 +72,14 @@ impl LlmClient for OpenRouterClient {
                 "role": "user",
                 "content": prompt
             }],
-            "response_format": { "type": "json_schema", "json_schema": schema },
+            "response_format": { 
+                "type": "json_schema", 
+                "json_schema": {
+                    "name": "response",
+                    "strict": true,
+                    "schema": schema
+                }
+            },
             "stream": false
         });
         let resp = self.send(body).await?;
@@ -106,7 +113,14 @@ impl LlmClient for OpenRouterClient {
                 "role": "user",
                 "content": content
             }],
-            "response_format": { "type": "json_schema", "json_schema": schema },
+            "response_format": { 
+                "type": "json_schema", 
+                "json_schema": {
+                    "name": "response",
+                    "strict": true,
+                    "schema": schema
+                }
+            },
             "stream": false
         });
 

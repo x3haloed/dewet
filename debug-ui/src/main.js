@@ -1,21 +1,126 @@
 // Dewet Debug UI
 
-// Import Tauri API (will be available when running in Tauri)
+// WebSocket connection for browser mode
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWebSocket(url) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close();
+  }
+  
+  console.log('Connecting to daemon:', url);
+  ws = new WebSocket(url);
+  
+  ws.onopen = () => {
+    console.log('WebSocket connected');
+    connected = true;
+    updateConnectionStatus();
+  };
+  
+  ws.onclose = () => {
+    console.log('WebSocket disconnected');
+    connected = false;
+    updateConnectionStatus();
+    // Auto-reconnect after 3 seconds
+    if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = setTimeout(() => connectWebSocket(url), 3000);
+  };
+  
+  ws.onerror = (err) => {
+    console.error('WebSocket error:', err);
+  };
+  
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      handleWireMessage(msg);
+    } catch (e) {
+      console.warn('Failed to parse message:', e);
+    }
+  };
+}
+
+function handleWireMessage(msg) {
+  switch (msg.type) {
+    case 'hello':
+      console.log('Received hello from daemon:', msg);
+      break;
+    case 'speak':
+      handleDaemonEvent({ type: 'speak', character_id: msg.character_id, text: msg.text });
+      break;
+    case 'vision_analysis':
+      handleDaemonEvent({
+        type: 'vision_analysis',
+        activity: msg.activity,
+        warrants_response: msg.warrants_response,
+        response_trigger: msg.response_trigger,
+        companion_interest: msg.companion_interest,
+        timestamp: msg.timestamp
+      });
+      break;
+    case 'decision_update':
+      if (msg.decision?.composite) {
+        handleDaemonEvent({
+          type: 'screen_capture',
+          image_base64: msg.decision.composite,
+          active_window: '',
+          active_app: ''
+        });
+      } else if (msg.decision?.should_respond !== undefined) {
+        handleDaemonEvent({
+          type: 'arbiter_decision',
+          should_respond: msg.decision.should_respond,
+          responder_id: msg.decision.responder_id,
+          reasoning: msg.decision.reasoning || '',
+          urgency: msg.decision.urgency || 0,
+          timestamp: Date.now() / 1000
+        });
+      }
+      break;
+    case 'observation_snapshot':
+      handleDaemonEvent({
+        type: 'screen_capture',
+        image_base64: '',
+        active_window: msg.active_window,
+        active_app: msg.active_app
+      });
+      break;
+    case 'log':
+      handleDaemonEvent({
+        type: 'log',
+        level: msg.level,
+        message: msg.message,
+        timestamp: msg.timestamp
+      });
+      break;
+  }
+}
+
+// Check if running in Tauri
 let invoke, listen;
-try {
+let tauriMode = false;
+
+// Detect Tauri by checking for __TAURI__ global
+if (window.__TAURI__) {
+  tauriMode = true;
+  console.log('Running in Tauri mode');
   const tauri = await import('@tauri-apps/api/core');
   const event = await import('@tauri-apps/api/event');
   invoke = tauri.invoke;
   listen = event.listen;
-} catch (e) {
-  // Running in browser without Tauri - create mock functions
-  console.log('Running in browser mode (no Tauri)');
+} else {
+  // Running in browser without Tauri - use direct WebSocket
+  console.log('Running in browser mode (direct WebSocket)');
   invoke = async (cmd, args) => {
-    console.log('Mock invoke:', cmd, args);
+    console.log('Browser invoke:', cmd, args);
+    if (cmd === 'connect_to_daemon' && args?.url) {
+      connectWebSocket(args.url);
+    }
     return null;
   };
   listen = async (event, callback) => {
-    console.log('Mock listen:', event);
+    console.log('Browser listen:', event);
     return () => {};
   };
 }
@@ -47,17 +152,23 @@ async function init() {
   // Set up event listeners
   setupControls();
   
-  // Listen for daemon events
-  await listen('daemon-event', (event) => {
-    handleDaemonEvent(event.payload);
-  });
-  
-  // Check initial connection status
-  try {
-    connected = await invoke('get_connection_status');
-    updateConnectionStatus();
-  } catch (e) {
-    console.error('Failed to get connection status:', e);
+  if (tauriMode) {
+    // Listen for daemon events from Tauri backend
+    await listen('daemon-event', (event) => {
+      handleDaemonEvent(event.payload);
+    });
+    
+    // Check initial connection status
+    try {
+      connected = await invoke('get_connection_status');
+      updateConnectionStatus();
+    } catch (e) {
+      console.error('Failed to get connection status:', e);
+    }
+  } else {
+    // Browser mode - connect directly via WebSocket
+    const url = daemonUrl.value || 'ws://127.0.0.1:7777';
+    connectWebSocket(url);
   }
 }
 
@@ -89,10 +200,16 @@ function setupControls() {
   
   reconnectBtn.addEventListener('click', async () => {
     const url = daemonUrl.value.trim();
-    try {
-      await invoke('connect_to_daemon', { url });
-    } catch (e) {
-      console.error('Reconnect failed:', e);
+    if (tauriMode) {
+      try {
+        await invoke('connect_to_daemon', { url });
+      } catch (e) {
+        console.error('Reconnect failed:', e);
+      }
+    } else {
+      // Browser mode - reconnect directly
+      if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+      connectWebSocket(url);
     }
   });
   

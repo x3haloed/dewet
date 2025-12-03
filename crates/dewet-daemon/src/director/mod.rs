@@ -86,8 +86,8 @@ Be concise but specific."#;
                     "description": "Whether a companion should respond"
                 },
                 "response_trigger": {
-                    "type": ["string", "null"],
-                    "description": "What triggered the potential response"
+                    "type": "string",
+                    "description": "What triggered the potential response, or empty string if none"
                 },
                 "companion_interest": {
                     "type": "object",
@@ -95,7 +95,7 @@ Be concise but specific."#;
                     "additionalProperties": { "type": "number" }
                 }
             },
-            "required": ["activity", "warrants_response", "companion_interest"]
+            "required": ["activity", "warrants_response", "response_trigger", "companion_interest"]
         });
 
         let response = self.llm
@@ -374,21 +374,22 @@ fn arbiter_schema() -> Value {
         "type": "object",
         "properties": {
             "should_respond": { "type": "boolean" },
-            "responder_id": { "type": ["string", "null"] },
+            "responder_id": { "type": "string", "description": "Character ID who should respond, or empty string if no one" },
             "reasoning": { "type": "string" },
-            "suggested_mood": { "type": ["string", "null"] },
+            "suggested_mood": { "type": "string", "description": "Suggested mood, or empty string for neutral" },
             "urgency": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
         },
-        "required": ["should_respond", "reasoning", "urgency"]
+        "required": ["should_respond", "responder_id", "reasoning", "suggested_mood", "urgency"]
     })
 }
 
 #[derive(Debug, Deserialize)]
 struct ArbiterDecision {
     should_respond: bool,
+    #[serde(deserialize_with = "deserialize_optional_string")]
     responder_id: Option<String>,
     reasoning: String,
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_optional_string")]
     suggested_mood: Option<String>,
     urgency: f32,
 }
@@ -419,8 +420,21 @@ pub struct VisionAnalysis {
     pub activity: String,
     /// Whether the current context warrants a response
     pub warrants_response: bool,
-    /// What triggered the potential response
+    /// What triggered the potential response (empty string if none)
+    #[serde(deserialize_with = "deserialize_optional_string")]
     pub response_trigger: Option<String>,
     /// Interest level per companion (character_id -> 0.0-1.0)
     pub companion_interest: Value,
+}
+
+fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: String = serde::Deserialize::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(s))
+    }
 }

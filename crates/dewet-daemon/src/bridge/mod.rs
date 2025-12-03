@@ -60,10 +60,9 @@ impl Bridge {
     }
 
     pub fn broadcast(&self, message: DaemonMessage) -> Result<()> {
-        self.outgoing_tx
-            .send(message)
-            .map(|_| ())
-            .map_err(|err| anyhow::anyhow!(err))
+        // Ignore send errors - they just mean no clients are connected
+        let _ = self.outgoing_tx.send(message);
+        Ok(())
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonMessage> {
@@ -88,10 +87,9 @@ pub struct BridgeHandle {
 
 impl BridgeHandle {
     pub fn broadcast(&self, message: DaemonMessage) -> Result<()> {
-        self.outgoing_tx
-            .send(message)
-            .map(|_| ())
-            .map_err(|err| anyhow::anyhow!(err))
+        // Ignore send errors - they just mean no clients are connected
+        let _ = self.outgoing_tx.send(message);
+        Ok(())
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<DaemonMessage> {

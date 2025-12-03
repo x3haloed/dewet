@@ -12,7 +12,7 @@ chat_depth = 30
 screen_history = 8
 
 [storage]
-url = "file:./data/dewet.db"
+url = "file:./.local/dewet.db"
 auth_token_env = "TURSO_AUTH_TOKEN"
 
 [director]
@@ -21,8 +21,8 @@ cooldown_after_speak_ms = 30000
 
 [llm]
 provider = { type = "lmstudio", endpoint = "http://127.0.0.1:1234" }
-decision_model = "qwen3-vl-8b"
-response_model = "qwen3-vl-8b"
+decision_model = "ministral-3-3b"
+response_model = "ministral-3-3b"
 
 [tts]
 provider = "null"

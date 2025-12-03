@@ -12,7 +12,9 @@ chat_depth = 30
 screen_history = 8
 
 [storage]
-url = "libsql://dewet.turso.io"
+# Local file database (default for development)
+url = "file:./.local/dewet.db"
+# Or use Turso cloud: url = "libsql://dewet.turso.io"
 auth_token_env = "TURSO_AUTH_TOKEN"
 
 [director]

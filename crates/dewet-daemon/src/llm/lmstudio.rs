@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use reqwest::Client;
 use serde_json::Value;
 use serde_json::json;
+use tracing;
 
 use super::LlmClient;
 
@@ -31,11 +32,17 @@ impl LmStudioClient {
             .post(self.url())
             .json(&payload)
             .send()
-            .await?
-            .error_for_status()?
-            .json::<Value>()
             .await?;
-        Ok(resp)
+        
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_else(|_| "no body".to_string());
+            tracing::error!(%status, %body, "LM Studio request failed");
+            return Err(anyhow!("LM Studio error {}: {}", status, body));
+        }
+        
+        let json: Value = resp.json().await?;
+        Ok(json)
     }
 }
 
@@ -61,7 +68,14 @@ impl LlmClient for LmStudioClient {
                 "role": "user",
                 "content": [{"type": "text", "text": prompt}]
             }],
-            "response_format": { "type": "json_schema", "json_schema": schema },
+            "response_format": { 
+                "type": "json_schema", 
+                "json_schema": {
+                    "name": "response",
+                    "strict": true,
+                    "schema": schema
+                }
+            },
             "stream": false
         });
         let resp = self.send(body).await?;
@@ -95,7 +109,14 @@ impl LlmClient for LmStudioClient {
                 "role": "user",
                 "content": content
             }],
-            "response_format": { "type": "json_schema", "json_schema": schema },
+            "response_format": { 
+                "type": "json_schema", 
+                "json_schema": {
+                    "name": "response",
+                    "strict": true,
+                    "schema": schema
+                }
+            },
             "stream": false
         });
 
