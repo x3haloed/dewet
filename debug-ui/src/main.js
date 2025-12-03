@@ -27,6 +27,7 @@ const logStream = document.getElementById('log-stream');
 const screenPreview = document.getElementById('screen-preview');
 const activeWindow = document.getElementById('active-window');
 const activeApp = document.getElementById('active-app');
+const visionAnalysis = document.getElementById('vision-analysis');
 
 const characterSelect = document.getElementById('character-select');
 const forceSpeakText = document.getElementById('force-speak-text');
@@ -39,6 +40,7 @@ const reconnectBtn = document.getElementById('reconnect-btn');
 let connected = false;
 let decisions = [];
 let logs = [];
+let visionHistory = [];
 
 // Initialize
 async function init() {
@@ -116,6 +118,10 @@ function handleDaemonEvent(event) {
       
     case 'arbiter_decision':
       addDecision(event);
+      break;
+      
+    case 'vision_analysis':
+      updateVisionAnalysis(event);
       break;
       
     case 'log':
@@ -196,6 +202,40 @@ function updateScreenPreview(data) {
   
   activeWindow.textContent = data.active_window || '-';
   activeApp.textContent = data.active_app || '-';
+}
+
+function updateVisionAnalysis(data) {
+  visionHistory.unshift(data);
+  if (visionHistory.length > 20) visionHistory.pop();
+  
+  renderVisionAnalysis();
+}
+
+function renderVisionAnalysis() {
+  if (visionHistory.length === 0) {
+    visionAnalysis.innerHTML = '<p class="placeholder">Waiting for VLM analysis...</p>';
+    return;
+  }
+  
+  visionAnalysis.innerHTML = visionHistory.map(v => `
+    <div class="vision-entry ${v.warrants_response ? 'active' : 'passive'}">
+      <div class="timestamp">${formatTime(v.timestamp)}</div>
+      <div class="activity">${escapeHtml(v.activity)}</div>
+      <div class="meta">
+        <span class="warrants ${v.warrants_response ? 'yes' : 'no'}">
+          ${v.warrants_response ? '🟢 Response warranted' : '⚪ Passive'}
+        </span>
+        ${v.response_trigger ? `<span class="trigger">Trigger: ${escapeHtml(v.response_trigger)}</span>` : ''}
+      </div>
+      ${Object.keys(v.companion_interest || {}).length > 0 ? `
+        <div class="interests">
+          ${Object.entries(v.companion_interest).map(([id, score]) => 
+            `<span class="interest-badge" style="opacity: ${0.3 + score * 0.7}">${id}: ${(score * 100).toFixed(0)}%</span>`
+          ).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `).join('');
 }
 
 function formatTime(timestamp) {

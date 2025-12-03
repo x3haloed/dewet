@@ -1570,10 +1570,10 @@ impl LlmClient for OpenRouterClient {
 ### Phase 2: The Eye (Week 2)
 - [x] Screen capture in Rust (xcap)
 - [x] Send screenshot to Godot for display in debug
-- [ ] LLM provider abstraction (LM Studio + OpenRouter)
-- [ ] Vision analysis via provider (Qwen2.5-VL / Gemini Flash)
-- [ ] Display VLM description in debug window
-- [ ] Implement observation buffer for frames, chat, and system events
+- [x] LLM provider abstraction (LM Studio + OpenRouter)
+- [x] Vision analysis via provider (Qwen2.5-VL / Gemini Flash)
+- [x] Display VLM description in debug window
+- [x] Implement observation buffer for frames, chat, and system events
 
 ### Phase 3: The Memory (Week 3)
 - [x] Port `OpticalMemory.gd` to Godot Dewet project

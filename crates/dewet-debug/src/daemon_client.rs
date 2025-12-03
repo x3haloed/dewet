@@ -19,6 +19,7 @@ pub enum DaemonEvent {
     Disconnected,
     Log(LogEntry),
     ArbiterDecision(ArbiterDecision),
+    VisionAnalysis(VisionAnalysis),
     ScreenCapture {
         image_base64: String,
         active_window: String,
@@ -28,6 +29,16 @@ pub enum DaemonEvent {
         character_id: String,
         text: String,
     },
+}
+
+/// Vision analysis from VLM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VisionAnalysis {
+    pub activity: String,
+    pub warrants_response: bool,
+    pub response_trigger: Option<String>,
+    pub companion_interest: serde_json::Value,
+    pub timestamp: i64,
 }
 
 /// Client for communicating with the Dewet daemon
@@ -189,6 +200,29 @@ fn map_wire_message(value: &Value) -> Option<DaemonEvent> {
                 .unwrap_or_default()
                 .to_string(),
         }),
+        "vision_analysis" => Some(DaemonEvent::VisionAnalysis(VisionAnalysis {
+            activity: value
+                .get("activity")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            warrants_response: value
+                .get("warrants_response")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            response_trigger: value
+                .get("response_trigger")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            companion_interest: value
+                .get("companion_interest")
+                .cloned()
+                .unwrap_or(serde_json::json!({})),
+            timestamp: value
+                .get("timestamp")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| Utc::now().timestamp()),
+        })),
         "decision_update" => {
             if let Some(decision) = value.get("decision") {
                 if let Some(image) = decision.get("composite").and_then(|v| v.as_str()) {

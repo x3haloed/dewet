@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use chrono::{DateTime, Utc};
+use image::RgbaImage;
 
 use crate::{bridge::ChatPacket, config::ObservationConfig, vision::VisionFrame};
 
@@ -21,7 +22,7 @@ impl ObservationBuffer {
         }
     }
 
-    pub fn ingest_screen(&mut self, frame: VisionFrame) -> Observation {
+    pub fn ingest_screen(&mut self, frame: VisionFrame, composite: Option<RgbaImage>) -> Observation {
         let summary = ScreenSummary::from_frame(&frame);
         self.screen_history.push_back(summary.clone());
         while self.screen_history.len() > self.config.screen_history {
@@ -30,6 +31,7 @@ impl ObservationBuffer {
 
         Observation {
             frame,
+            composite,
             screen_summary: summary,
             recent_chat: self.chat_history.iter().cloned().collect(),
             seconds_since_user_message: self
@@ -79,6 +81,7 @@ impl ScreenSummary {
 
 pub struct Observation {
     pub frame: VisionFrame,
+    pub composite: Option<RgbaImage>,
     pub screen_summary: ScreenSummary,
     pub recent_chat: Vec<ChatPacket>,
     pub seconds_since_user_message: u64,

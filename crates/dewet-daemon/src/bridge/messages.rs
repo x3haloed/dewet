@@ -54,6 +54,13 @@ pub enum DaemonMessage {
         screen_summary: String,
         timestamp: i64,
     },
+    VisionAnalysis {
+        activity: String,
+        warrants_response: bool,
+        response_trigger: Option<String>,
+        companion_interest: Value,
+        timestamp: i64,
+    },
     Log {
         level: String,
         message: String,

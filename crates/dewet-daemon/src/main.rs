@@ -107,15 +107,17 @@ async fn perception_tick(
     optical_assets: &Arc<Mutex<OpticalAssets>>,
 ) -> Result<()> {
     let frame = vision.capture_frame()?;
-    let observation = buffer.ingest_screen(frame);
 
     let optical = optical_assets.lock().await.clone();
     let composite_image = composite_renderer.render(&CompositeParts {
-        desktop: observation.frame.rgba(),
+        desktop: frame.rgba(),
         memory_visualization: optical.memory,
         chat_transcript: optical.chat,
         character_status: optical.status,
     });
+
+    // Ingest screen with composite for vision analysis
+    let observation = buffer.ingest_screen(frame, Some(composite_image.clone()));
 
     bridge.broadcast(DaemonMessage::ObservationSnapshot {
         active_app: "unknown".into(),
@@ -124,7 +126,25 @@ async fn perception_tick(
         timestamp: Utc::now().timestamp(),
     })?;
 
-    let decision = director.evaluate(&observation).await?;
+    let (decision, vision_analysis) = director.evaluate(&observation).await?;
+
+    // Broadcast vision analysis if available
+    if let Some(ref analysis) = vision_analysis {
+        bridge.broadcast(DaemonMessage::VisionAnalysis {
+            activity: analysis.activity.clone(),
+            warrants_response: analysis.warrants_response,
+            response_trigger: analysis.response_trigger.clone(),
+            companion_interest: analysis.companion_interest.clone(),
+            timestamp: Utc::now().timestamp(),
+        })?;
+
+        log_event(
+            bridge,
+            "debug",
+            format!("VLM: {} (warrants_response={})", analysis.activity, analysis.warrants_response),
+        );
+    }
+
     match decision {
         Decision::Pass => {}
         Decision::Speak {
