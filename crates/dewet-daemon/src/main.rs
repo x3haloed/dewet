@@ -25,6 +25,9 @@ use dewet_daemon::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env file if present (before reading config)
+    dotenvy::dotenv().ok();
+    
     tracing_subscriber::fmt::init();
 
     let config = AppConfig::load()?;
