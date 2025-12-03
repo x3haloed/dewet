@@ -6,9 +6,6 @@ extends Control
 @onready var message_input: LineEdit = $InputContainer/MessageInput
 @onready var send_button: Button = $InputContainer/SendButton
 
-# Message scene for chat bubbles
-var _message_scene: PackedScene
-
 # Colors for different senders
 const COLORS = {
 	"user": Color(0.4, 0.6, 1.0),
@@ -21,14 +18,6 @@ func _ready() -> void:
 	# Connect UI signals
 	send_button.pressed.connect(_on_send_pressed)
 	message_input.text_submitted.connect(_on_text_submitted)
-	
-	# Load or create message scene
-	_create_message_scene()
-
-
-func _create_message_scene() -> void:
-	# We'll create bubbles dynamically instead of loading a scene
-	pass
 
 
 ## Add a message to the chat display
@@ -38,7 +27,7 @@ func add_message(sender: String, content: String) -> void:
 	
 	# Scroll to bottom after a frame
 	await get_tree().process_frame
-	chat_scroll.scroll_vertical = chat_scroll.get_v_scroll_bar().max_value
+	chat_scroll.scroll_vertical = int(chat_scroll.get_v_scroll_bar().max_value)
 
 
 func _create_bubble(sender: String, content: String) -> Control:

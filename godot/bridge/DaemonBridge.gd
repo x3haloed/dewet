@@ -1,5 +1,4 @@
 extends Node
-class_name DaemonBridge
 ## WebSocket bridge to the Dewet Daemon
 ##
 ## This autoload handles all communication between Godot and the Rust daemon.
@@ -176,8 +175,8 @@ func get_state() -> void:
 	_send({"type": "get_state"})
 
 
-## Check if connected
-func is_connected() -> bool:
+## Check if connected to daemon
+func is_daemon_connected() -> bool:
 	return _state == State.CONNECTED and _identified
 
 
