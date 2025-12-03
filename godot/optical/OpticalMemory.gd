@@ -204,38 +204,54 @@ func _create_memory_node_panel(node_data: Dictionary) -> Control:
 	return panel
 
 
-func _populate_chat_transcript(chat_history: Array) -> void:
-	# Clear existing children
-	for child in _chat_container.get_children():
-		child.queue_free()
-	
-	if chat_history.is_empty():
-		var empty_label := Label.new()
-		empty_label.text = "(No recent messages)"
-		empty_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-		empty_label.add_theme_font_size_override("font_size", 14)
-		_chat_container.add_child(empty_label)
-		return
-	
-	# Show most recent messages (reverse order, newest at bottom)
-	var messages_to_show = chat_history.slice(0, 12)  # Limit to 12 messages
-	for message in messages_to_show:
-		var msg_panel := _create_chat_message_panel(message)
-		_chat_container.add_child(msg_panel)
-
-
 func _create_chat_message_panel(message: Dictionary) -> Control:
 	var sender := str(message.get("sender", "unknown"))
 	var content := str(message.get("content", ""))
 	var is_user := sender.to_lower() == "user"
 	
+	# Memory tier for visual fade (Aria's "forgetting without amnesia")
+	var tier := str(message.get("tier", "hot")).to_lower()
+	var relevance := float(message.get("relevance", 1.0))
+	
+	# Calculate opacity based on tier
+	var opacity: float
+	match tier:
+		"hot":
+			opacity = 1.0
+		"warm":
+			opacity = 0.65
+		"cold":
+			opacity = 0.35
+		_:
+			opacity = relevance  # Fallback to raw relevance
+	
 	var hbox := HBoxContainer.new()
 	hbox.custom_minimum_size.y = 0
+	hbox.modulate.a = opacity  # Apply fade to entire message
+	
+	# Tier indicator (small colored dot)
+	var tier_dot := ColorRect.new()
+	tier_dot.custom_minimum_size = Vector2(4, 14)
+	match tier:
+		"hot":
+			tier_dot.color = Color(0.3, 0.9, 0.4, opacity)  # Green
+		"warm":
+			tier_dot.color = Color(0.9, 0.7, 0.2, opacity)  # Yellow
+		"cold":
+			tier_dot.color = Color(0.5, 0.5, 0.5, opacity)  # Gray
+		_:
+			tier_dot.color = Color(0.5, 0.5, 0.5, opacity)
+	hbox.add_child(tier_dot)
+	
+	# Small spacer
+	var spacer := Control.new()
+	spacer.custom_minimum_size.x = 6
+	hbox.add_child(spacer)
 	
 	# Sender label
 	var sender_label := Label.new()
 	sender_label.text = sender.capitalize() + ":"
-	sender_label.custom_minimum_size.x = 60
+	sender_label.custom_minimum_size.x = 54
 	sender_label.add_theme_font_size_override("font_size", 13)
 	if is_user:
 		sender_label.add_theme_color_override("font_color", Color(0.5, 0.7, 1.0))
@@ -246,8 +262,8 @@ func _create_chat_message_panel(message: Dictionary) -> Control:
 	# Content
 	var content_label := Label.new()
 	# Truncate long messages
-	if content.length() > 60:
-		content_label.text = content.substr(0, 60) + "..."
+	if content.length() > 55:
+		content_label.text = content.substr(0, 55) + "..."
 	else:
 		content_label.text = content
 	content_label.add_theme_font_size_override("font_size", 13)
@@ -283,6 +299,87 @@ func _populate_status_panel(memory_nodes: Array) -> void:
 	memory_count.add_theme_font_size_override("font_size", 12)
 	memory_count.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	_status_container.add_child(memory_count)
+
+
+func _populate_chat_transcript(chat_history: Array) -> void:
+	# Clear existing children
+	for child in _chat_container.get_children():
+		child.queue_free()
+	
+	if chat_history.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "(No recent messages)"
+		empty_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		empty_label.add_theme_font_size_override("font_size", 14)
+		_chat_container.add_child(empty_label)
+		return
+	
+	# Count tiers for display
+	var hot_count := 0
+	var warm_count := 0
+	var cold_count := 0
+	for msg in chat_history:
+		var tier := str(msg.get("tier", "hot")).to_lower()
+		match tier:
+			"hot": hot_count += 1
+			"warm": warm_count += 1
+			"cold": cold_count += 1
+	
+	# Show tier summary at top
+	var tier_summary := HBoxContainer.new()
+	tier_summary.custom_minimum_size.y = 18
+	
+	var tier_label := Label.new()
+	tier_label.text = "Memory: "
+	tier_label.add_theme_font_size_override("font_size", 11)
+	tier_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	tier_summary.add_child(tier_label)
+	
+	# Hot indicator
+	var hot_dot := ColorRect.new()
+	hot_dot.custom_minimum_size = Vector2(8, 8)
+	hot_dot.color = Color(0.3, 0.9, 0.4)
+	tier_summary.add_child(hot_dot)
+	var hot_label := Label.new()
+	hot_label.text = " %d  " % hot_count
+	hot_label.add_theme_font_size_override("font_size", 11)
+	hot_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	tier_summary.add_child(hot_label)
+	
+	# Warm indicator
+	var warm_dot := ColorRect.new()
+	warm_dot.custom_minimum_size = Vector2(8, 8)
+	warm_dot.color = Color(0.9, 0.7, 0.2)
+	tier_summary.add_child(warm_dot)
+	var warm_label := Label.new()
+	warm_label.text = " %d  " % warm_count
+	warm_label.add_theme_font_size_override("font_size", 11)
+	warm_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	tier_summary.add_child(warm_label)
+	
+	# Cold indicator
+	var cold_dot := ColorRect.new()
+	cold_dot.custom_minimum_size = Vector2(8, 8)
+	cold_dot.color = Color(0.5, 0.5, 0.5)
+	tier_summary.add_child(cold_dot)
+	var cold_label := Label.new()
+	cold_label.text = " %d" % cold_count
+	cold_label.add_theme_font_size_override("font_size", 11)
+	cold_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	tier_summary.add_child(cold_label)
+	
+	_chat_container.add_child(tier_summary)
+	
+	# Add separator
+	var separator := HSeparator.new()
+	separator.custom_minimum_size.y = 4
+	_chat_container.add_child(separator)
+	
+	# Show most recent messages (newest at bottom)
+	var messages_to_show = chat_history.slice(0, 10)  # Limit to 10 messages (room for tier summary)
+	for message in messages_to_show:
+		var msg_panel := _create_chat_message_panel(message)
+		_chat_container.add_child(msg_panel)
 
 
 func _create_companion_status(companion_name: String, status: String, cooldown: float) -> Control:

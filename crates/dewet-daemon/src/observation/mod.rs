@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use chrono::{DateTime, Utc};
 use image::RgbaImage;
 
-use crate::{bridge::ChatPacket, config::ObservationConfig, vision::VisionFrame};
+use crate::{bridge::{ChatPacket, MemoryTier}, config::ObservationConfig, vision::VisionFrame};
 
 /// Stores a screenshot that resulted in an approved response
 #[derive(Clone)]
@@ -90,11 +90,15 @@ impl ObservationBuffer {
             self.screen_history.pop_front();
         }
 
+        // Use VLM-filtered chat (hot + warm only, limited count)
+        let filtered_chat = self.vlm_filtered_chat();
+        
         Observation {
             frame,
             composite,
             screen_summary: summary,
-            recent_chat: self.chat_history.iter().cloned().collect(),
+            recent_chat: filtered_chat,
+            all_chat: self.chat_history.iter().cloned().collect(),
             seconds_since_user_message: self
                 .last_user_message
                 .map(|ts| (Utc::now() - ts).num_seconds().max(0) as u64)
@@ -121,6 +125,72 @@ impl ObservationBuffer {
     
     pub fn pending_message_count(&self) -> usize {
         self.pending_user_messages.len()
+    }
+    
+    /// Apply time-based decay to all chat messages and update their tiers
+    /// Call this at the start of each perception tick
+    pub fn apply_relevance_decay(&mut self, minutes_since_last: f32) {
+        let decay_rate = self.config.decay_rate;
+        let forget_threshold = self.config.forget_threshold;
+        
+        for packet in self.chat_history.iter_mut() {
+            packet.apply_decay(decay_rate, minutes_since_last);
+            packet.update_tier(forget_threshold);
+        }
+    }
+    
+    /// Get messages filtered by tier for VLM context
+    /// Returns only hot and warm messages, limited to max_vlm_messages
+    pub fn vlm_filtered_chat(&self) -> Vec<ChatPacket> {
+        let max = self.config.max_vlm_messages;
+        
+        // Prioritize hot messages, then warm, skip cold
+        let mut messages: Vec<_> = self.chat_history
+            .iter()
+            .filter(|p| p.tier != MemoryTier::Cold)
+            .cloned()
+            .collect();
+        
+        // Sort by relevance (highest first), then by timestamp (newest first) as tiebreaker
+        messages.sort_by(|a, b| {
+            b.relevance.partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.timestamp.cmp(&a.timestamp))
+        });
+        
+        // Take only the most relevant messages
+        messages.truncate(max);
+        
+        // Re-sort by timestamp for chronological order in context
+        messages.sort_by_key(|p| p.timestamp);
+        
+        messages
+    }
+    
+    /// Boost relevance of a message (e.g., when it triggers a response)
+    pub fn boost_relevance(&mut self, timestamp: i64, boost: f32) {
+        for packet in self.chat_history.iter_mut() {
+            if packet.timestamp == timestamp {
+                packet.relevance = (packet.relevance + boost).min(1.0);
+                packet.update_tier(self.config.forget_threshold);
+                break;
+            }
+        }
+    }
+    
+    /// Get tier distribution for debugging
+    pub fn tier_stats(&self) -> (usize, usize, usize) {
+        let mut hot = 0;
+        let mut warm = 0;
+        let mut cold = 0;
+        for p in &self.chat_history {
+            match p.tier {
+                MemoryTier::Hot => hot += 1,
+                MemoryTier::Warm => warm += 1,
+                MemoryTier::Cold => cold += 1,
+            }
+        }
+        (hot, warm, cold)
     }
 }
 
@@ -154,6 +224,9 @@ pub struct Observation {
     pub frame: VisionFrame,
     pub composite: Option<RgbaImage>,
     pub screen_summary: ScreenSummary,
+    /// Filtered chat for VLM (hot + warm only, limited)
     pub recent_chat: Vec<ChatPacket>,
+    /// Full chat history for rendering (includes cold)
+    pub all_chat: Vec<ChatPacket>,
     pub seconds_since_user_message: u64,
 }

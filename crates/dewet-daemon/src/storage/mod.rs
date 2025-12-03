@@ -95,6 +95,8 @@ impl Storage {
     }
 
     pub async fn recent_chat(&self, limit: usize) -> Result<Vec<ChatPacket>> {
+        use crate::bridge::MemoryTier;
+        
         let messages = self.db.get_recent_chat(limit).await?;
         Ok(messages
             .into_iter()
@@ -102,6 +104,8 @@ impl Storage {
                 sender: msg.sender,
                 content: msg.content,
                 timestamp: msg.timestamp,
+                relevance: 1.0,  // Fresh from DB = full relevance
+                tier: MemoryTier::Hot,
             })
             .collect())
     }

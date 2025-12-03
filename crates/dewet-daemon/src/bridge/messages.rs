@@ -68,11 +68,55 @@ pub enum DaemonMessage {
     },
 }
 
+/// Memory tier for chat messages (Aria's "forgetting without amnesia")
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryTier {
+    #[default]
+    Hot,   // Recent, highly relevant
+    Warm,  // Somewhat recent, still relevant
+    Cold,  // Old or low relevance, candidate for eviction
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatPacket {
     pub sender: String,
     pub content: String,
     pub timestamp: i64,
+    /// Relevance score (0.0-1.0), decays over time
+    #[serde(default = "ChatPacket::default_relevance")]
+    pub relevance: f32,
+    /// Memory tier based on relevance and recency
+    #[serde(default)]
+    pub tier: MemoryTier,
+}
+
+impl ChatPacket {
+    fn default_relevance() -> f32 {
+        1.0
+    }
+    
+    /// Calculate age in seconds
+    pub fn age_seconds(&self) -> i64 {
+        chrono::Utc::now().timestamp() - self.timestamp
+    }
+    
+    /// Update tier based on current relevance score
+    pub fn update_tier(&mut self, forget_threshold: f32) {
+        self.tier = if self.relevance >= 0.7 {
+            MemoryTier::Hot
+        } else if self.relevance >= forget_threshold {
+            MemoryTier::Warm
+        } else {
+            MemoryTier::Cold
+        };
+    }
+    
+    /// Apply time-based decay to relevance
+    pub fn apply_decay(&mut self, decay_rate: f32, minutes_elapsed: f32) {
+        self.relevance *= decay_rate.powf(minutes_elapsed);
+        self.relevance = self.relevance.clamp(0.0, 1.0);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

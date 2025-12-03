@@ -109,7 +109,7 @@ impl TursoDb {
         )
         .await?;
 
-        // Chat messages table
+        // Chat messages table with relevance scoring for memory management
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -117,12 +117,24 @@ impl TursoDb {
                 timestamp INTEGER NOT NULL,
                 sender TEXT NOT NULL,
                 content TEXT NOT NULL,
-                in_response_to INTEGER REFERENCES chat_messages(id)
+                in_response_to INTEGER REFERENCES chat_messages(id),
+                relevance_score REAL DEFAULT 1.0,
+                tier TEXT DEFAULT 'hot' CHECK(tier IN ('hot', 'warm', 'cold'))
             )
             "#,
             (),
         )
         .await?;
+        
+        // Try to add columns if they don't exist (for existing databases)
+        let _ = conn.execute(
+            "ALTER TABLE chat_messages ADD COLUMN relevance_score REAL DEFAULT 1.0",
+            (),
+        ).await;
+        let _ = conn.execute(
+            "ALTER TABLE chat_messages ADD COLUMN tier TEXT DEFAULT 'hot'",
+            (),
+        ).await;
 
         // Arbiter decisions table
         conn.execute(

@@ -10,6 +10,10 @@ max_history = 12
 [observation]
 chat_depth = 30
 screen_history = 8
+# Memory management (Aria's "forgetting without amnesia")
+forget_threshold = 0.3     # Messages below this relevance are "cold"
+decay_rate = 0.92          # Relevance multiplier per minute (0.92 = ~50% after 8 min)
+max_vlm_messages = 15      # Only send top N relevant messages to VLM
 
 [storage]
 url = "file:./.local/dewet.db"
@@ -20,9 +24,9 @@ min_decision_interval_ms = 2000
 cooldown_after_speak_ms = 30000
 
 [llm]
-provider = { type = "lmstudio", endpoint = "http://127.0.0.1:1234" }
-decision_model = "ministral-3-3b"
-response_model = "ministral-3-3b"
+provider = { type = "openrouter", api_key_env = "OPENROUTER_API_KEY", site_url = "https://dewet.dev", site_name = "Dewet" }
+decision_model = "google/gemini-2.5-flash"  # Fast vision model for VLM analysis
+response_model = "x-ai/grok-4.1-fast:free"
 
 [tts]
 provider = "null"

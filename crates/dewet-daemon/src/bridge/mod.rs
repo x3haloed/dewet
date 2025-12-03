@@ -22,7 +22,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::BridgeConfig;
 
-pub use messages::{ChatPacket, ClientMessage, DaemonMessage, MemoryNode};
+pub use messages::{ChatPacket, ClientMessage, DaemonMessage, MemoryNode, MemoryTier};
 
 const INCOMING_BUFFER: usize = 256;
 const BROADCAST_BUFFER: usize = 256;

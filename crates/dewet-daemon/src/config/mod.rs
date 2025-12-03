@@ -126,6 +126,17 @@ pub struct ObservationConfig {
     pub chat_depth: usize,
     #[serde(default = "ObservationConfig::default_screen_history")]
     pub screen_history: usize,
+    
+    // Memory management settings (Aria's "forgetting without amnesia")
+    /// Relevance score below which messages become "cold" (0.0-1.0)
+    #[serde(default = "ObservationConfig::default_forget_threshold")]
+    pub forget_threshold: f32,
+    /// How fast relevance decays per minute (multiplier)
+    #[serde(default = "ObservationConfig::default_decay_rate")]
+    pub decay_rate: f32,
+    /// Maximum messages to include in VLM context (hot + warm only)
+    #[serde(default = "ObservationConfig::default_max_vlm_messages")]
+    pub max_vlm_messages: usize,
 }
 
 impl ObservationConfig {
@@ -135,6 +146,15 @@ impl ObservationConfig {
     fn default_screen_history() -> usize {
         8
     }
+    fn default_forget_threshold() -> f32 {
+        0.3  // Messages below this are "cold"
+    }
+    fn default_decay_rate() -> f32 {
+        0.95  // Multiply relevance by this per minute
+    }
+    fn default_max_vlm_messages() -> usize {
+        15  // Only send top 15 messages to VLM
+    }
 }
 
 impl Default for ObservationConfig {
@@ -142,6 +162,9 @@ impl Default for ObservationConfig {
         Self {
             chat_depth: Self::default_chat_depth(),
             screen_history: Self::default_screen_history(),
+            forget_threshold: Self::default_forget_threshold(),
+            decay_rate: Self::default_decay_rate(),
+            max_vlm_messages: Self::default_max_vlm_messages(),
         }
     }
 }

@@ -12,7 +12,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info};
 
 use dewet_daemon::{
-    bridge::{Bridge, BridgeHandle, ChatPacket, ClientMessage, DaemonMessage, MemoryNode},
+    bridge::{Bridge, BridgeHandle, ChatPacket, ClientMessage, DaemonMessage, MemoryNode, MemoryTier},
     character::{CharacterSpec, LoadedCharacter},
     config::AppConfig,
     director::{Decision, Director},
@@ -133,6 +133,20 @@ async fn perception_tick(
         );
     }
     
+    // Apply relevance decay based on time elapsed (assume ~capture_interval between ticks)
+    let minutes_elapsed = vision.capture_interval().as_secs_f32() / 60.0;
+    buffer.apply_relevance_decay(minutes_elapsed);
+    
+    // Log tier distribution occasionally
+    let (hot, warm, cold) = buffer.tier_stats();
+    if hot + warm + cold > 0 {
+        log_event(
+            bridge,
+            "debug",
+            format!("Memory tiers: {} hot, {} warm, {} cold", hot, warm, cold),
+        );
+    }
+    
     let frame = vision.capture_frame()?;
 
     let optical = optical_assets.lock().await.clone();
@@ -213,6 +227,8 @@ async fn perception_tick(
                 sender: character_id.clone(),
                 content: text.clone(),
                 timestamp: Utc::now().timestamp(),
+                relevance: 1.0,
+                tier: MemoryTier::Hot,
             };
             storage.record_chat(&assistant_packet).await?;
             buffer.record_chat(assistant_packet);
@@ -240,8 +256,9 @@ async fn perception_tick(
         }
     }
 
+    // Send chat with tier info to Godot for visual rendering (fade cold messages)
     bridge.broadcast(DaemonMessage::RenderOpticalMemory {
-        chat_history: storage.recent_chat(10).await?,
+        chat_history: observation.all_chat.clone(),
         memory_nodes: vec![MemoryNode {
             id: "focus".into(),
             label: "Recent activity".into(),
@@ -283,6 +300,8 @@ async fn handle_client_message(
                 sender: "user".into(),
                 content: text,
                 timestamp: Utc::now().timestamp(),
+                relevance: 1.0,
+                tier: MemoryTier::Hot,
             };
             // Store in DB immediately for persistence
             storage.record_chat(&packet).await?;
