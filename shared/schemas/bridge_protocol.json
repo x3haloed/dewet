@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dewet.dev/schemas/bridge_protocol.json",
+  "title": "DewetBridgeMessage",
+  "description": "JSON messages exchanged across the Dewet WebSocket bridge.",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "Message discriminator."
+    }
+  },
+  "required": ["type"],
+  "oneOf": [
+    {
+      "title": "Ping",
+      "properties": {
+        "type": { "const": "ping" },
+        "nonce": { "type": "string" }
+      },
+      "required": ["type"]
+    },
+    {
+      "title": "UserChat",
+      "properties": {
+        "type": { "const": "user_chat" },
+        "text": { "type": "string", "minLength": 1 }
+      },
+      "required": ["type", "text"]
+    },
+    {
+      "title": "OpticalRenderResult",
+      "properties": {
+        "type": { "const": "optical_render_result" },
+        "memory": { "type": "string", "description": "PNG base64" },
+        "chat": { "type": "string", "description": "PNG base64" },
+        "status": { "type": "string", "description": "PNG base64" }
+      },
+      "required": ["type", "memory", "chat", "status"]
+    },
+    {
+      "title": "DebugCommand",
+      "properties": {
+        "type": { "const": "debug_command" },
+        "command": { "type": "string" },
+        "payload": { "type": "object" }
+      },
+      "required": ["type", "command"]
+    },
+    {
+      "title": "Hello",
+      "properties": {
+        "type": { "const": "hello" },
+        "version": { "type": "string" },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["type", "version", "capabilities"]
+    },
+    {
+      "title": "Speak",
+      "properties": {
+        "type": { "const": "speak" },
+        "character_id": { "type": "string" },
+        "text": { "type": "string" },
+        "audio_base64": { "type": "string" },
+        "puppet": { "type": "object" }
+      },
+      "required": ["type", "character_id", "text"]
+    },
+    {
+      "title": "React",
+      "properties": {
+        "type": { "const": "react" },
+        "character_id": { "type": "string" },
+        "expression": { "type": "string" }
+      },
+      "required": ["type", "character_id", "expression"]
+    },
+    {
+      "title": "RenderOpticalMemory",
+      "properties": {
+        "type": { "const": "render_optical_memory" },
+        "chat_history": { "type": "array", "items": { "type": "object" } },
+        "memory_nodes": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["type"]
+    },
+    {
+      "title": "DecisionUpdate",
+      "properties": {
+        "type": { "const": "decision_update" },
+        "decision": { "type": "object" },
+        "observation": { "type": "object" }
+      },
+      "required": ["type", "decision"]
+    },
+    {
+      "title": "ObservationSnapshot",
+      "properties": {
+        "type": { "const": "observation_snapshot" },
+        "active_app": { "type": "string" },
+        "active_window": { "type": "string" },
+        "screen_summary": { "type": "string" },
+        "timestamp": { "type": "integer" }
+      },
+      "required": ["type", "timestamp"]
+    }
+  ]
+}
+

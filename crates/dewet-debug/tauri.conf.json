@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Dewet Debug",
+  "version": "0.1.0",
+  "identifier": "com.dewet.debug",
+  "build": {
+    "frontendDist": "../../debug-ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "cd ../../debug-ui && npm run dev",
+    "beforeBuildCommand": "cd ../../debug-ui && npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Dewet Debug",
+        "width": 900,
+        "height": 700,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}
+

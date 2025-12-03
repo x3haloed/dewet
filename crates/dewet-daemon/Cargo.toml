@@ -1,0 +1,37 @@
+[package]
+name = "dewet-daemon"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+base64 = "0.22"
+bytes = "1"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+libsql = "0.6"
+parking_lot = "0.12"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = "3"
+thiserror = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "net", "sync"] }
+tokio-stream = "0.1"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+toml = "0.8"
+fastembed = { version = "4", optional = true }
+xcap = { version = "0.0.11", optional = true }
+
+[features]
+default = []
+native-capture = ["xcap"]
+vector-search = ["fastembed"]
+

@@ -1562,29 +1562,32 @@ impl LlmClient for OpenRouterClient {
 ## Implementation Roadmap
 
 ### Phase 1: The Bridge (Week 1)
-- [ ] Scaffold Rust daemon with WebSocket server
-- [ ] Create minimal Godot project that connects to daemon
-- [ ] Bi-directional message passing (ping/pong, then chat)
-- [ ] Scaffold Tauri debug window with connection status
+- [x] Scaffold Rust daemon with WebSocket server
+- [x] Create minimal Godot project that connects to daemon
+- [x] Bi-directional message passing (ping/pong, then chat)
+- [x] Scaffold Tauri debug window with connection status
 
 ### Phase 2: The Eye (Week 2)
-- [ ] Screen capture in Rust (xcap)
-- [ ] Send screenshot to Godot for display in debug
+- [x] Screen capture in Rust (xcap)
+- [x] Send screenshot to Godot for display in debug
 - [ ] LLM provider abstraction (LM Studio + OpenRouter)
 - [ ] Vision analysis via provider (Qwen2.5-VL / Gemini Flash)
 - [ ] Display VLM description in debug window
+- [ ] Implement observation buffer for frames, chat, and system events
 
 ### Phase 3: The Memory (Week 3)
-- [ ] Port `OpticalMemory.gd` to Godot Dewet project
-- [ ] Render chat transcript as image
-- [ ] Turso schema and basic CRUD
+- [x] Port `OpticalMemory.gd` to Godot Dewet project
+- [x] Render chat transcript as image
+- [x] Turso schema and basic CRUD
 - [ ] Episode storage and retrieval
+- [ ] Handle `optical_render_result` responses in daemon and persist rendered quadrants
 
 ### Phase 4: The Brain (Week 4)
 - [ ] Director arbiter LLM integration
 - [ ] Arbiter prompt engineering and JSON schema
 - [ ] Inner monologue / self-audit
-- [ ] 4-quadrant composite rendering
+- [x] 4-quadrant composite rendering
+- [ ] Feed observation buffer + Turso context into director prompts
 
 ### Phase 5: The Soul (Week 5)
 - [ ] Import CCv2 parser from vtube-bot
@@ -1595,13 +1598,13 @@ impl LlmClient for OpenRouterClient {
 ### Phase 6: The Body (Week 6)
 - [ ] Puppet rendering in Godot (2D sprites first)
 - [ ] TTS integration (NeuTTS or cloud)
-- [ ] Lip sync via audio analysis
 - [ ] Expression/mood animations
 
 ### Phase 7: Polish (Week 7+)
 - [ ] Forgetting scheduler (memory decay)
 - [ ] Spatial memory visualization
-- [ ] Debug window: decision log, memory browser
+- [x] Debug window: decision log
+- [ ] Debug window: memory browser
 - [ ] Transparent window mode
 
 ---

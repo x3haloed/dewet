@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dewet.dev/schemas/character_v2.json",
+  "title": "CharacterCardV2",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "personality": { "type": "string" },
+    "scenario": { "type": "string" },
+    "system_prompt": { "type": "string" },
+    "mes_example": { "type": "string" },
+    "character_book": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "string" },
+          "is_public": { "type": "boolean", "default": false }
+        },
+        "required": ["content"]
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Arbitrary descriptive metadata (interests, dislikes, etc.)"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "personality",
+    "scenario",
+    "system_prompt",
+    "mes_example"
+  ]
+}
+

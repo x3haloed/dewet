@@ -1,0 +1,103 @@
+[gd_scene load_steps=6 format=3 uid="uid://cn3iyxq8h6rku"]
+
+[ext_resource type="Script" path="res://main/Dewet.gd" id="1_main"]
+[ext_resource type="Script" path="res://chat/ChatWindow.gd" id="2_chat"]
+[ext_resource type="Script" path="res://puppet/PuppetController.gd" id="3_puppet"]
+[ext_resource type="Script" path="res://optical/OpticalMemory.gd" id="4_optical"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.12, 0.12, 0.14, 0.95)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="Dewet" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+
+[node name="MainContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 0
+
+[node name="PuppetArea" type="Control" parent="MainContainer"]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="PuppetController" type="Node2D" parent="MainContainer/PuppetArea"]
+script = ExtResource("3_puppet")
+
+[node name="ChatWindow" type="Control" parent="MainContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("2_chat")
+
+[node name="ChatScroll" type="ScrollContainer" parent="MainContainer/ChatWindow"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 8.0
+offset_right = -12.0
+offset_bottom = -60.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ChatMessages" type="VBoxContainer" parent="MainContainer/ChatWindow/ChatScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="InputContainer" type="HBoxContainer" parent="MainContainer/ChatWindow"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -52.0
+offset_right = -12.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_constants/separation = 8
+
+[node name="MessageInput" type="LineEdit" parent="MainContainer/ChatWindow/InputContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Type a message..."
+
+[node name="SendButton" type="Button" parent="MainContainer/ChatWindow/InputContainer"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Send"
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="."]
+
+[node name="OpticalMemory" type="Control" parent="."]
+visible = false
+script = ExtResource("4_optical")
+bridge_path = NodePath("/root/DaemonBridge")
+
