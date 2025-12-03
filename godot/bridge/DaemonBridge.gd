@@ -95,6 +95,8 @@ func _handle_message(json_str: String) -> void:
 		"hello":
 			_identified = true
 			print("[DaemonBridge] Hello from daemon")
+			# Request initial state (notes, etc.) from daemon
+			_send({"type": "ping", "nonce": null})
 			connected.emit()
 		
 		"connected":
