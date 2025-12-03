@@ -174,230 +174,102 @@ func _populate_ariaos_demo() -> void:
 	for child in _ariaos_container.get_children():
 		child.queue_free()
 	
-	# === Left column: Focus & Notes ===
-	var left_panel := _create_ariaos_window("Current Focus", Vector2(16, 16), Vector2(480, 200))
-	_ariaos_container.add_child(left_panel)
-	
-	var focus_content := VBoxContainer.new()
-	focus_content.position = Vector2(12, 40)
-	focus_content.size = Vector2(456, 150)
-	left_panel.add_child(focus_content)
-	
-	var focus_text := Label.new()
-	focus_text.text = "User is working on code in their IDE"
-	focus_text.add_theme_font_size_override("font_size", 16)
-	focus_text.add_theme_color_override("font_color", Color(0.85, 0.87, 0.92))
-	focus_text.autowrap_mode = TextServer.AUTOWRAP_WORD
-	focus_content.add_child(focus_text)
-	
-	var focus_bar_label := Label.new()
-	focus_bar_label.text = "Engagement Level"
-	focus_bar_label.add_theme_font_size_override("font_size", 12)
-	focus_bar_label.add_theme_color_override("font_color", Color(0.5, 0.55, 0.6))
-	focus_content.add_child(focus_bar_label)
-	
-	var focus_bar := _create_progress_bar(0.73, Color(0.4, 0.75, 0.95))
-	focus_content.add_child(focus_bar)
-	
-	# Notes panel
-	var notes_panel := _create_ariaos_window("Aria's Notes", Vector2(16, 232), Vector2(480, 280))
-	_ariaos_container.add_child(notes_panel)
-	
-	var notes_content := VBoxContainer.new()
-	notes_content.position = Vector2(12, 40)
-	notes_content.size = Vector2(456, 230)
-	notes_panel.add_child(notes_content)
-	
-	var notes := [
-		{"icon": "📝", "text": "User seems focused - avoid interruptions"},
-		{"icon": "⏰", "text": "Remind about break at 3:00 PM"},
-		{"icon": "💡", "text": "They asked about ARIAOS earlier"},
-		{"icon": "🎯", "text": "Current project: dewet daemon"},
-	]
-	
-	for note in notes:
-		var note_row := _create_note_row(note.icon, note.text)
-		notes_content.add_child(note_row)
-	
-	# === Right column: System & Activity ===
-	var system_panel := _create_ariaos_window("System Status", Vector2(512, 16), Vector2(496, 160))
-	_ariaos_container.add_child(system_panel)
-	
-	var system_content := VBoxContainer.new()
-	system_content.position = Vector2(12, 40)
-	system_content.size = Vector2(472, 110)
-	system_panel.add_child(system_content)
-	
-	var metrics := [
-		{"label": "Memory Nodes", "value": "12 active"},
-		{"label": "Chat Context", "value": "8 hot, 4 warm, 2 cold"},
-		{"label": "Last Response", "value": "2 min ago"},
-	]
-	
-	for metric in metrics:
-		var metric_row := _create_metric_row(metric.label, metric.value)
-		system_content.add_child(metric_row)
-	
-	# Activity log panel
-	var activity_panel := _create_ariaos_window("Recent Activity", Vector2(512, 192), Vector2(496, 320))
-	_ariaos_container.add_child(activity_panel)
-	
-	var activity_content := VBoxContainer.new()
-	activity_content.position = Vector2(12, 40)
-	activity_content.size = Vector2(472, 270)
-	activity_panel.add_child(activity_content)
-	
-	var activities := [
-		{"time": "10:42", "event": "Observed user switching to terminal"},
-		{"time": "10:40", "event": "Decided not to interrupt (focus high)"},
-		{"time": "10:38", "event": "Responded to user question"},
-		{"time": "10:35", "event": "Detected project context change"},
-		{"time": "10:30", "event": "Session started"},
-	]
-	
-	for activity in activities:
-		var activity_row := _create_activity_row(activity.time, activity.event)
-		activity_content.add_child(activity_row)
+	# Create maximized Notes app
+	var notes_app := _create_notes_app()
+	_ariaos_container.add_child(notes_app)
 
 
-func _create_ariaos_window(title: String, pos: Vector2, window_size: Vector2) -> Control:
-	var window := Control.new()
-	window.position = pos
-	window.size = window_size
+func _create_notes_app() -> Control:
+	var container_size := _ariaos_container.size
+	var margin := 8
+	var app_size := Vector2(container_size.x - margin * 2, container_size.y - margin * 2)
 	
-	# Window background
+	var app := Control.new()
+	app.position = Vector2(margin, margin)
+	app.size = app_size
+	
+	# App background
 	var bg := ColorRect.new()
-	bg.color = Color(0.10, 0.12, 0.16, 1.0)
-	bg.size = window_size
-	window.add_child(bg)
-	
-	# Window border (subtle)
-	var border := ColorRect.new()
-	border.color = Color(0.2, 0.24, 0.32, 1.0)
-	border.size = Vector2(window_size.x, 2)
-	window.add_child(border)
+	bg.color = Color(0.08, 0.09, 0.12, 1.0)
+	bg.size = app_size
+	app.add_child(bg)
 	
 	# Title bar
 	var title_bar := ColorRect.new()
-	title_bar.color = Color(0.14, 0.16, 0.22, 1.0)
-	title_bar.position = Vector2(0, 2)
-	title_bar.size = Vector2(window_size.x, 32)
-	window.add_child(title_bar)
+	title_bar.color = Color(0.12, 0.14, 0.20, 1.0)
+	title_bar.position = Vector2(0, 0)
+	title_bar.size = Vector2(app_size.x, 36)
+	app.add_child(title_bar)
 	
-	# Window controls (decorative)
-	var close_btn := ColorRect.new()
-	close_btn.color = Color(0.9, 0.4, 0.4, 0.8)
-	close_btn.position = Vector2(10, 12)
-	close_btn.size = Vector2(10, 10)
-	window.add_child(close_btn)
+	# App icon
+	var icon := Label.new()
+	icon.text = "📝"
+	icon.position = Vector2(12, 6)
+	icon.add_theme_font_size_override("font_size", 18)
+	app.add_child(icon)
 	
-	var min_btn := ColorRect.new()
-	min_btn.color = Color(0.9, 0.8, 0.3, 0.8)
-	min_btn.position = Vector2(26, 12)
-	min_btn.size = Vector2(10, 10)
-	window.add_child(min_btn)
+	# App title
+	var title := Label.new()
+	title.text = "Notes"
+	title.position = Vector2(42, 8)
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
+	app.add_child(title)
 	
-	var max_btn := ColorRect.new()
-	max_btn.color = Color(0.4, 0.9, 0.5, 0.8)
-	max_btn.position = Vector2(42, 12)
-	max_btn.size = Vector2(10, 10)
-	window.add_child(max_btn)
+	# DSL affordance in title bar (instead of window controls)
+	var dsl_hint := Label.new()
+	dsl_hint.text = "ariaos.apps.notes.minimize()"
+	dsl_hint.position = Vector2(app_size.x - 220, 10)
+	dsl_hint.add_theme_font_size_override("font_size", 11)
+	dsl_hint.add_theme_color_override("font_color", Color(0.45, 0.55, 0.70, 0.8))
+	app.add_child(dsl_hint)
 	
-	# Title text
-	var title_label := Label.new()
-	title_label.text = title
-	title_label.position = Vector2(62, 8)
-	title_label.add_theme_font_size_override("font_size", 14)
-	title_label.add_theme_color_override("font_color", Color(0.7, 0.73, 0.8))
-	window.add_child(title_label)
+	# Content area background
+	var content_bg := ColorRect.new()
+	content_bg.color = Color(0.06, 0.07, 0.09, 1.0)
+	content_bg.position = Vector2(8, 44)
+	content_bg.size = Vector2(app_size.x - 16, app_size.y - 100)
+	app.add_child(content_bg)
 	
-	return window
+	# Notes content label
+	var notes_content := Label.new()
+	notes_content.text = """• User seems focused - avoid interruptions
+• Remind about break at 3:00 PM
+• They asked about ARIAOS earlier
+• Current project: dewet daemon
+• Remember to check in after long silence periods"""
+	notes_content.position = Vector2(20, 56)
+	notes_content.size = Vector2(app_size.x - 40, app_size.y - 124)
+	notes_content.add_theme_font_size_override("font_size", 15)
+	notes_content.add_theme_color_override("font_color", Color(0.82, 0.84, 0.90))
+	notes_content.autowrap_mode = TextServer.AUTOWRAP_WORD
+	notes_content.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	app.add_child(notes_content)
+	
+	# DSL affordance panel at bottom
+	var dsl_panel := ColorRect.new()
+	dsl_panel.color = Color(0.10, 0.11, 0.15, 1.0)
+	dsl_panel.position = Vector2(0, app_size.y - 48)
+	dsl_panel.size = Vector2(app_size.x, 48)
+	app.add_child(dsl_panel)
+	
+	var dsl_title := Label.new()
+	dsl_title.text = "DSL Commands:"
+	dsl_title.position = Vector2(12, app_size.y - 42)
+	dsl_title.add_theme_font_size_override("font_size", 10)
+	dsl_title.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
+	app.add_child(dsl_title)
+	
+	var dsl_commands := Label.new()
+	dsl_commands.text = "ariaos.apps.notes.set_content(text)  |  ariaos.apps.notes.append(text)  |  ariaos.apps.notes.clear()"
+	dsl_commands.position = Vector2(12, app_size.y - 26)
+	dsl_commands.add_theme_font_size_override("font_size", 12)
+	dsl_commands.add_theme_color_override("font_color", Color(0.55, 0.75, 0.90, 0.9))
+	app.add_child(dsl_commands)
+	
+	return app
 
 
-func _create_progress_bar(value: float, color: Color) -> Control:
-	var container := Control.new()
-	container.custom_minimum_size = Vector2(400, 20)
-	
-	var bg := ColorRect.new()
-	bg.color = Color(0.15, 0.18, 0.22)
-	bg.size = Vector2(400, 12)
-	bg.position = Vector2(0, 4)
-	container.add_child(bg)
-	
-	var fill := ColorRect.new()
-	fill.color = color
-	fill.size = Vector2(400 * value, 12)
-	fill.position = Vector2(0, 4)
-	container.add_child(fill)
-	
-	var label := Label.new()
-	label.text = "%d%%" % int(value * 100)
-	label.position = Vector2(410, 0)
-	label.add_theme_font_size_override("font_size", 12)
-	label.add_theme_color_override("font_color", color)
-	container.add_child(label)
-	
-	return container
-
-
-func _create_note_row(icon: String, text: String) -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 36
-	
-	var icon_label := Label.new()
-	icon_label.text = icon
-	icon_label.add_theme_font_size_override("font_size", 18)
-	icon_label.custom_minimum_size.x = 32
-	row.add_child(icon_label)
-	
-	var text_label := Label.new()
-	text_label.text = text
-	text_label.add_theme_font_size_override("font_size", 14)
-	text_label.add_theme_color_override("font_color", Color(0.8, 0.82, 0.88))
-	row.add_child(text_label)
-	
-	return row
-
-
-func _create_metric_row(label_text: String, value_text: String) -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 28
-	
-	var label := Label.new()
-	label.text = label_text + ":"
-	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", Color(0.55, 0.58, 0.65))
-	label.custom_minimum_size.x = 140
-	row.add_child(label)
-	
-	var value := Label.new()
-	value.text = value_text
-	value.add_theme_font_size_override("font_size", 13)
-	value.add_theme_color_override("font_color", Color(0.75, 0.78, 0.85))
-	row.add_child(value)
-	
-	return row
-
-
-func _create_activity_row(time: String, event: String) -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 32
-	
-	var time_label := Label.new()
-	time_label.text = time
-	time_label.add_theme_font_size_override("font_size", 12)
-	time_label.add_theme_color_override("font_color", Color(0.4, 0.75, 0.9))
-	time_label.custom_minimum_size.x = 50
-	row.add_child(time_label)
-	
-	var event_label := Label.new()
-	event_label.text = event
-	event_label.add_theme_font_size_override("font_size", 13)
-	event_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
-	event_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	row.add_child(event_label)
-	
-	return row
 
 
 func _on_ariaos_render_request(_ariaos_state: Dictionary) -> void:
