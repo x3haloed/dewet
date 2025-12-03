@@ -8,6 +8,45 @@ Dewet is a desktop companion stack composed of three cooperating parts:
 
 This repository currently contains the Rust daemon, the Godot project skeleton, shared schemas, and documentation outlines derived from `dewet-project-plan.md`.
 
+## Prerequisites
+
+Before running Dewet, ensure you have the following installed:
+
+### Rust
+
+Install via [rustup](https://rustup.rs/):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### Node.js
+
+A recent version of Node.js is required (v18+ recommended). If you use [nvm](https://github.com/nvm-sh/nvm):
+
+```bash
+nvm install --lts
+nvm use --lts
+```
+
+### Godot 4.3+
+
+1. Download [Godot 4.3+](https://godotengine.org/download) and install it to `/Applications/Godot.app` (macOS).
+2. Add the `godot` command to your PATH:
+
+```bash
+# macOS
+sudo ln -s /Applications/Godot.app/Contents/MacOS/Godot /usr/local/bin/godot
+```
+
+### Tauri CLI
+
+Install the Tauri CLI for building the debug window:
+
+```bash
+cargo install tauri-cli
+```
+
 ## Local Development
 
 ### One Command (Daemon + Debug + Godot)
@@ -21,7 +60,7 @@ This helper ensures the `debug-ui` bundle is rebuilt, then spawns:
 
 - `cargo run -p dewet-daemon --features native-capture`
 - `cargo tauri dev` inside `crates/dewet-debug`
-- `godot4 --path godot --scene main/Dewet.tscn`
+- `godot --path godot --scene main/Dewet.tscn`
 
 Use flags such as `--no-godot`, `--no-debug`, or `--skip-ui-build` to tailor a session (see `cargo run -p xtask -- dev --help`).
 

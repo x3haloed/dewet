@@ -37,8 +37,8 @@ struct DevArgs {
     /// Skip launching the Godot puppet window
     #[arg(long)]
     no_godot: bool,
-    /// Override the Godot binary name or path (default: godot4)
-    #[arg(long, default_value = "godot4")]
+    /// Override the Godot binary name or path (default: godot)
+    #[arg(long, default_value = "godot")]
     godot_binary: String,
     /// Skip rebuilding the debug-ui bundle before booting Tauri
     #[arg(long)]

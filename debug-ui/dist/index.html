@@ -1,1 +1,97 @@
-<!doctype html><title>Dewet Debug</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dewet Debug</title>
+  <script type="module" crossorigin src="/assets/index-CEgA2i7H.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-HsZ6xw85.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>🎭 Dewet Debug</h1>
+      <div id="connection-status" class="status disconnected">
+        <span class="dot"></span>
+        <span class="text">Disconnected</span>
+      </div>
+    </header>
+
+    <main>
+      <div class="panel-grid">
+        <!-- Decision Log Panel -->
+        <section class="panel" id="decision-panel">
+          <h2>🧠 Arbiter Decisions</h2>
+          <div class="panel-content" id="decision-log">
+            <p class="placeholder">Waiting for decisions...</p>
+          </div>
+        </section>
+
+        <!-- Screen Preview Panel -->
+        <section class="panel" id="screen-panel">
+          <h2>👁️ Screen Preview</h2>
+          <div class="panel-content">
+            <div id="screen-preview">
+              <p class="placeholder">No screen capture</p>
+            </div>
+            <div id="screen-info">
+              <span id="active-window">-</span>
+              <span id="active-app">-</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vision Analysis Panel -->
+        <section class="panel" id="vision-panel">
+          <h2>🔮 VLM Analysis</h2>
+          <div class="panel-content" id="vision-analysis">
+            <p class="placeholder">Waiting for VLM analysis...</p>
+          </div>
+        </section>
+
+        <!-- Log Stream Panel -->
+        <section class="panel" id="log-panel">
+          <h2>📜 Log Stream</h2>
+          <div class="log-filters">
+            <label><input type="checkbox" checked data-level="debug"> Debug</label>
+            <label><input type="checkbox" checked data-level="info"> Info</label>
+            <label><input type="checkbox" checked data-level="warn"> Warn</label>
+            <label><input type="checkbox" checked data-level="error"> Error</label>
+          </div>
+          <div class="panel-content" id="log-stream">
+            <p class="placeholder">Waiting for logs...</p>
+          </div>
+        </section>
+
+        <!-- Control Panel -->
+        <section class="panel" id="control-panel">
+          <h2>🎛️ Controls</h2>
+          <div class="panel-content">
+            <div class="control-group">
+              <h3>Force Speak</h3>
+              <select id="character-select">
+                <option value="aria">Aria</option>
+              </select>
+              <input type="text" id="force-speak-text" placeholder="Text (optional)">
+              <button id="force-speak-btn">Speak</button>
+            </div>
+
+            <div class="control-group">
+              <h3>Cooldowns</h3>
+              <button id="reset-cooldowns-btn">Reset All Cooldowns</button>
+            </div>
+
+            <div class="control-group">
+              <h3>Connection</h3>
+              <input type="text" id="daemon-url" value="ws://127.0.0.1:7777" placeholder="Daemon URL">
+              <button id="reconnect-btn">Reconnect</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>
+
