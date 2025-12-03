@@ -1605,16 +1605,3 @@ impl LlmClient for OpenRouterClient {
 - [ ] Transparent window mode
 
 ---
-
-## Key Differences from Original Advice
-
-| Original (Python) | Revised (Rust) |
-|-------------------|----------------|
-| Python backend | Rust daemon |
-| ChromaDB/Qdrant | Turso (libSQL with vectors) |
-| FastAPI | Native WebSocket |
-| mss (Python) | xcap (Rust) |
-| pyvts (VTube Studio) | Native Godot puppets |
-| Single process | Daemon + Godot + Debug (3 processes) |
-
----
