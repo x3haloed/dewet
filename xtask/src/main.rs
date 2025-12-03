@@ -67,7 +67,13 @@ async fn run_dev(args: DevArgs) -> Result<()> {
         specs.push(ProcessSpec {
             name: "daemon".to_string(),
             program: "cargo".to_string(),
-            args: vec!["run".into(), "-p".into(), "dewet-daemon".into()],
+            args: vec![
+                "run".into(),
+                "-p".into(),
+                "dewet-daemon".into(),
+                "--features".into(),
+                "native-capture".into(),
+            ],
             cwd: root.clone(),
         });
     }

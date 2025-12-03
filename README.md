@@ -19,7 +19,7 @@ cargo run -p xtask -- dev
 
 This helper ensures the `debug-ui` bundle is rebuilt, then spawns:
 
-- `cargo run -p dewet-daemon`
+- `cargo run -p dewet-daemon --features native-capture`
 - `cargo tauri dev` inside `crates/dewet-debug`
 - `godot4 --path godot --scene main/Dewet.tscn`
 
@@ -31,8 +31,8 @@ Use flags such as `--no-godot`, `--no-debug`, or `--skip-ui-build` to tailor a s
 # Compile the daemon
 cargo build --package dewet-daemon
 
-# Run it with default configuration
-cargo run --package dewet-daemon
+# Run it with default configuration (with native screen capture)
+cargo run --package dewet-daemon --features native-capture
 ```
 
 The daemon exposes a WebSocket bridge on `ws://127.0.0.1:7777` by default. Godot and the debug window should connect to that bridge for realtime updates. To inspect live context, run the Tauri-based debug window:
