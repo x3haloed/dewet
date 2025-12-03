@@ -4,10 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.dewet.debug",
   "build": {
-    "frontendDist": "../../debug-ui/dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd ../../debug-ui && npm run dev",
-    "beforeBuildCommand": "cd ../../debug-ui && npm run build"
+    "frontendDist": "../../debug-ui/dist"
   },
   "app": {
     "windows": [
