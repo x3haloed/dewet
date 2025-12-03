@@ -1,0 +1,29 @@
+[bridge]
+listen_addr = "127.0.0.1:7777"
+max_clients = 4
+
+[vision]
+capture_interval_ms = 1500
+diff_threshold = 0.12
+max_history = 12
+
+[observation]
+chat_depth = 30
+screen_history = 8
+
+[storage]
+url = "file:./data/dewet.db"
+auth_token_env = "TURSO_AUTH_TOKEN"
+
+[director]
+min_decision_interval_ms = 2000
+cooldown_after_speak_ms = 30000
+
+[llm]
+provider = { type = "lmstudio", endpoint = "http://127.0.0.1:1234" }
+decision_model = "qwen3-vl-8b"
+response_model = "qwen3-vl-8b"
+
+[tts]
+provider = "null"
+
