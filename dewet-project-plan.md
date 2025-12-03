@@ -1608,3 +1608,29 @@ impl LlmClient for OpenRouterClient {
 - [ ] Transparent window mode
 
 ---
+
+## Unified App Packaging Plan
+
+1. **Single Host Process (Tauri)**  
+   Promote `crates/dewet-debug` to the primary desktop shell (`Dewet.app`). Split `dewet-daemon` into `dewet-core` (library) plus a thin CLI so the Tauri process can link `dewet-core` directly. This keeps daemon logic in-process while preserving a standalone binary for headless use.
+
+2. **Godot Integration without Extra Dock Icons**  
+   Export the Godot puppet for macOS and ship the binary + `.pck` inside the Tauri bundle. Launch it as a child process marked `LSUIElement=1`, so its windows appear under the host app’s Dock icon. Longer-term, evaluate embedding Godot via a Web export hosted in a WebView or by integrating Godot’s display server into the `tao` event loop to remove the helper process entirely.
+
+3. **Shared Identity & Lifecycle**  
+   Give every component the same bundle identifier (`com.dewet.app`). Ensure auxiliary helpers are background-only so macOS treats all windows as belonging to the main app. The host process should own the daemon lifecycle (start on launch, stop on quit, optional LaunchAgent for auto-start).
+
+4. **Deterministic Build Pipeline**  
+   Extend `cargo tauri build` to:  
+   - Rebuild the Godot export via CLI.  
+   - Copy assets into `Dewet.app/Contents/Resources`.  
+   - Update `Info.plist` (`CFBundleIdentifier`, `LSUIElement`, `NSCameraUsageDescription`, etc.).  
+   - Run codesign + notarization.  
+   This produces a single `.app` bundle / installer that launches every window in one click.
+
+5. **Future Enhancements**  
+   - Wrap command-line dev tooling (`xtask dev`, etc.) inside the Tauri menu for “Start Companion Session”.  
+   - Add crash monitoring so if Godot or the daemon dies, the host relaunches them to keep the Dock state consistent.  
+   - Support Windows/Linux by swapping the bundle metadata pieces (AppUserModelID, `.desktop` files) while keeping the same orchestrator logic.
+
+This plan allows contributors to keep today’s multi-process dev loops while charting a clear path to a cohesive, single-icon desktop release.

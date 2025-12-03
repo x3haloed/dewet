@@ -22,7 +22,11 @@ impl ObservationBuffer {
         }
     }
 
-    pub fn ingest_screen(&mut self, frame: VisionFrame, composite: Option<RgbaImage>) -> Observation {
+    pub fn ingest_screen(
+        &mut self,
+        frame: VisionFrame,
+        composite: Option<RgbaImage>,
+    ) -> Observation {
         let summary = ScreenSummary::from_frame(&frame);
         self.screen_history.push_back(summary.clone());
         while self.screen_history.len() > self.config.screen_history {

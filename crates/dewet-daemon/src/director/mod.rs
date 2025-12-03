@@ -54,11 +54,13 @@ impl Director {
 
     /// Analyze the composite image using VLM to understand current context
     pub async fn analyze_vision(&self, observation: &Observation) -> Result<VisionAnalysis> {
-        let composite = observation.composite.as_ref()
+        let composite = observation
+            .composite
+            .as_ref()
             .ok_or_else(|| anyhow!("No composite image available"))?;
-        
+
         let image_b64 = encode_rgba_to_base64(composite)?;
-        
+
         let prompt = r#"You are observing Dewet's context through 4 quadrants:
 
 **TOP-LEFT (DESKTOP)**: The user's current screen.
@@ -98,22 +100,21 @@ Be concise but specific."#;
             "required": ["activity", "warrants_response", "response_trigger", "companion_interest"]
         });
 
-        let response = self.llm
-            .complete_vision_json(
-                &self.models.decision,
-                prompt,
-                vec![image_b64],
-                schema,
-            )
+        let response = self
+            .llm
+            .complete_vision_json(&self.models.decision, prompt, vec![image_b64], schema)
             .await?;
 
         let analysis: VisionAnalysis = serde_json::from_value(response)?;
         info!(activity = %analysis.activity, warrants = analysis.warrants_response, "VLM analysis complete");
-        
+
         Ok(analysis)
     }
 
-    pub async fn evaluate(&mut self, observation: &Observation) -> Result<(Decision, Option<VisionAnalysis>)> {
+    pub async fn evaluate(
+        &mut self,
+        observation: &Observation,
+    ) -> Result<(Decision, Option<VisionAnalysis>)> {
         if self.last_decision.elapsed() < self.config.min_decision_interval() {
             return Ok((Decision::Pass, None));
         }
@@ -140,7 +141,7 @@ Be concise but specific."#;
             .complete_json(&self.models.decision, &prompt, schema)
             .await?;
         let decision: ArbiterDecision = serde_json::from_value(response)?;
-        
+
         info!(
             should_respond = decision.should_respond,
             responder = ?decision.responder_id,
@@ -190,7 +191,7 @@ Be concise but specific."#;
                 return Ok((Decision::Pass, vision_analysis));
             }
         }
-        
+
         info!(responder_id = %responder_id, "Generating response...");
 
         let response_prompt =
@@ -222,12 +223,15 @@ Be concise but specific."#;
             character.state.update_last_spoke();
         }
 
-        Ok((Decision::Speak {
-            character_id: responder_id,
-            text,
-            urgency: decision.urgency,
-            suggested_mood: decision.suggested_mood.clone(),
-        }, vision_analysis))
+        Ok((
+            Decision::Speak {
+                character_id: responder_id,
+                text,
+                urgency: decision.urgency,
+                suggested_mood: decision.suggested_mood.clone(),
+            },
+            vision_analysis,
+        ))
     }
 
     async fn run_audit(
@@ -270,18 +274,22 @@ Be concise but specific."#;
         }
     }
 
-    fn build_arbiter_prompt_with_vision(&self, observation: &Observation, vision: Option<&VisionAnalysis>) -> String {
+    fn build_arbiter_prompt_with_vision(
+        &self,
+        observation: &Observation,
+        vision: Option<&VisionAnalysis>,
+    ) -> String {
         let chat = format_chat(&observation.recent_chat);
         let character_section = self
             .characters
             .iter()
             .map(|c| {
-                let cooldown: String =
-                    if c.state.is_on_cooldown(self.config.cooldown_after_speak()) {
-                        "on cooldown".to_string()
-                    } else {
-                        "available".to_string()
-                    };
+                let cooldown: String = if c.state.is_on_cooldown(self.config.cooldown_after_speak())
+                {
+                    "on cooldown".to_string()
+                } else {
+                    "available".to_string()
+                };
                 format!(
                     "### {name} (id: {id})\nPersonality: {personality}\nStatus: {cooldown}\n",
                     name = c.spec.name,
@@ -448,9 +456,5 @@ where
     D: serde::Deserializer<'de>,
 {
     let s: String = serde::Deserialize::deserialize(deserializer)?;
-    if s.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(s))
-    }
+    if s.is_empty() { Ok(None) } else { Ok(Some(s)) }
 }

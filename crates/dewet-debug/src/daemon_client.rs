@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 use crate::{ArbiterDecision, LogEntry};
 
@@ -169,14 +169,9 @@ impl DaemonClient {
         let store = self.recent_decisions.read().await;
         store.iter().cloned().collect()
     }
-
 }
 
-async fn push_bounded<T: Clone>(
-    store: Arc<RwLock<VecDeque<T>>>,
-    entry: T,
-    max_len: usize,
-) {
+async fn push_bounded<T: Clone>(store: Arc<RwLock<VecDeque<T>>>, entry: T, max_len: usize) {
     let mut guard = store.write().await;
     if guard.len() >= max_len {
         guard.pop_front();
@@ -290,4 +285,3 @@ fn map_wire_message(value: &Value) -> Option<DaemonEvent> {
         _ => None,
     }
 }
-

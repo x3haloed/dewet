@@ -10,6 +10,23 @@ This repository currently contains the Rust daemon, the Godot project skeleton, 
 
 ## Local Development
 
+### One Command (Daemon + Debug + Godot)
+
+```bash
+# From the repo root
+cargo run -p xtask -- dev
+```
+
+This helper ensures the `debug-ui` bundle is rebuilt, then spawns:
+
+- `cargo run -p dewet-daemon`
+- `cargo tauri dev` inside `crates/dewet-debug`
+- `godot4 --path godot --scene main/Dewet.tscn`
+
+Use flags such as `--no-godot`, `--no-debug`, or `--skip-ui-build` to tailor a session (see `cargo run -p xtask -- dev --help`).
+
+### Manual Control
+
 ```bash
 # Compile the daemon
 cargo build --package dewet-daemon

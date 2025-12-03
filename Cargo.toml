@@ -2,6 +2,7 @@
 members = [
     "crates/dewet-daemon",
     "crates/dewet-debug",
+    "xtask",
 ]
 resolver = "2"
 

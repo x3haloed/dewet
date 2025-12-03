@@ -62,7 +62,7 @@ impl CharacterSpec {
     pub fn from_file(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("Failed to read character card {:?}", path))?;
-        
+
         let spec: Self = if path
             .extension()
             .map(|ext| ext == "json" || ext == "ccv2")
@@ -83,23 +83,29 @@ impl CharacterSpec {
     /// Convert CCv2 format to our internal format
     fn from_ccv2(ccv2: CharacterCardV2) -> Result<Self> {
         let data = ccv2.data;
-        
+
         // Extract ID from extensions or generate from name
-        let id = data.extensions.get("id")
+        let id = data
+            .extensions
+            .get("id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| data.name.to_lowercase().replace(' ', "_"));
-        
+
         // Convert character book entries
-        let character_book = data.character_book
+        let character_book = data
+            .character_book
             .map(|book| {
-                book.entries.into_iter().map(|entry| LoreEntry {
-                    content: entry.content,
-                    is_public: !entry.selective,
-                }).collect()
+                book.entries
+                    .into_iter()
+                    .map(|entry| LoreEntry {
+                        content: entry.content,
+                        is_public: !entry.selective,
+                    })
+                    .collect()
             })
             .unwrap_or_default();
-        
+
         Ok(Self {
             id,
             name: data.name,

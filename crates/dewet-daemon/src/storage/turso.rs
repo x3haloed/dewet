@@ -1,12 +1,12 @@
 //! Turso (libSQL) database client
 
 use anyhow::{Context, Result};
-use libsql::{params, Builder, Connection};
+use libsql::{Builder, Connection, params};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
-use super::{ChatMessage, CharacterState, Episode, ScreenContext, SpatialContext};
+use super::{CharacterState, ChatMessage, Episode, ScreenContext, SpatialContext};
 
 /// Turso database client
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl TursoDb {
                 .map(|s| s.to_string())
                 .or_else(|| std::env::var("TURSO_AUTH_TOKEN").ok())
                 .context("TURSO_AUTH_TOKEN required for remote database")?;
-            
+
             Builder::new_remote(url.to_string(), token)
                 .build()
                 .await
@@ -38,7 +38,9 @@ impl TursoDb {
         };
 
         let conn = db.connect().context("Failed to get database connection")?;
-        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
     }
 
     /// Initialize the database schema
@@ -159,7 +161,7 @@ impl TursoDb {
     /// Add an episode to memory
     pub async fn add_episode(&self, episode: &Episode) -> Result<()> {
         let conn = self.conn.lock().await;
-        
+
         let screen_context_json = episode
             .screen_context
             .as_ref()
@@ -191,7 +193,7 @@ impl TursoDb {
     /// Get recent episodes
     pub async fn get_recent_episodes(&self, limit: usize) -> Result<Vec<Episode>> {
         let conn = self.conn.lock().await;
-        
+
         let mut rows = conn
             .query(
                 r#"
@@ -214,9 +216,9 @@ impl TursoDb {
             let emotional_valence: f64 = row.get(5)?;
             let importance: f64 = row.get(6)?;
             let screen_context_str: Option<String> = row.get(7)?;
-            
-            let screen_context: Option<ScreenContext> = screen_context_str
-                .and_then(|s| serde_json::from_str(&s).ok());
+
+            let screen_context: Option<ScreenContext> =
+                screen_context_str.and_then(|s| serde_json::from_str(&s).ok());
 
             episodes.push(Episode {
                 id,
@@ -249,10 +251,8 @@ impl TursoDb {
         .await?;
 
         // Get the inserted ID
-        let mut rows = conn
-            .query("SELECT last_insert_rowid()", ())
-            .await?;
-        
+        let mut rows = conn.query("SELECT last_insert_rowid()", ()).await?;
+
         let id: i64 = if let Some(row) = rows.next().await? {
             row.get(0)?
         } else {
@@ -266,7 +266,7 @@ impl TursoDb {
     /// Get recent chat messages
     pub async fn get_recent_chat(&self, limit: usize) -> Result<Vec<ChatMessage>> {
         let conn = self.conn.lock().await;
-        
+
         let mut rows = conn
             .query(
                 r#"
@@ -286,7 +286,7 @@ impl TursoDb {
             let sender: String = row.get(2)?;
             let content: String = row.get(3)?;
             let in_response_to: Option<i64> = row.get(4)?;
-            
+
             messages.push(ChatMessage {
                 id,
                 timestamp,
@@ -335,7 +335,7 @@ impl TursoDb {
     /// Get character state
     pub async fn get_character_state(&self, character_id: &str) -> Result<Option<CharacterState>> {
         let conn = self.conn.lock().await;
-        
+
         let mut rows = conn
             .query(
                 r#"
@@ -352,7 +352,7 @@ impl TursoDb {
             let current_mood: String = row.get(1)?;
             let last_spoke_at: Option<i64> = row.get(2)?;
             let relationship_score: f64 = row.get(3)?;
-            
+
             Ok(Some(CharacterState {
                 character_id,
                 current_mood,
@@ -449,10 +449,10 @@ impl TursoDb {
             let ctx_value: String = row.get(2)?;
             let last_seen: i64 = row.get(3)?;
             let visit_count: i64 = row.get(4)?;
-            
+
             // Drop the rows to release the connection for the update
             drop(rows);
-            
+
             // Update visit count and last seen
             conn.execute(
                 r#"
@@ -474,7 +474,7 @@ impl TursoDb {
         } else {
             // Drop the rows iterator
             drop(rows);
-            
+
             // Create new
             let id = uuid::Uuid::new_v4().to_string();
             conn.execute(

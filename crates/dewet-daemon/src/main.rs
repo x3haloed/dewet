@@ -141,7 +141,10 @@ async fn perception_tick(
         log_event(
             bridge,
             "debug",
-            format!("VLM: {} (warrants_response={})", analysis.activity, analysis.warrants_response),
+            format!(
+                "VLM: {} (warrants_response={})",
+                analysis.activity, analysis.warrants_response
+            ),
         );
     }
 

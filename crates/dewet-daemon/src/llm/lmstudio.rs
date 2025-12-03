@@ -27,20 +27,15 @@ impl LmStudioClient {
     }
 
     async fn send(&self, payload: Value) -> Result<Value> {
-        let resp = self
-            .http
-            .post(self.url())
-            .json(&payload)
-            .send()
-            .await?;
-        
+        let resp = self.http.post(self.url()).json(&payload).send().await?;
+
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_else(|_| "no body".to_string());
             tracing::error!(%status, %body, "LM Studio request failed");
             return Err(anyhow!("LM Studio error {}: {}", status, body));
         }
-        
+
         let json: Value = resp.json().await?;
         Ok(json)
     }
@@ -68,8 +63,8 @@ impl LlmClient for LmStudioClient {
                 "role": "user",
                 "content": [{"type": "text", "text": prompt}]
             }],
-            "response_format": { 
-                "type": "json_schema", 
+            "response_format": {
+                "type": "json_schema",
                 "json_schema": {
                     "name": "response",
                     "strict": true,
@@ -109,8 +104,8 @@ impl LlmClient for LmStudioClient {
                 "role": "user",
                 "content": content
             }],
-            "response_format": { 
-                "type": "json_schema", 
+            "response_format": {
+                "type": "json_schema",
                 "json_schema": {
                     "name": "response",
                     "strict": true,
