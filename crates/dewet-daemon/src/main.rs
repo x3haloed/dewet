@@ -68,6 +68,7 @@ async fn main() -> Result<()> {
     let composite_renderer = CompositeRenderer::default();
 
     let optical_assets = Arc::new(Mutex::new(OpticalAssets::default()));
+    let ariaos_assets = Arc::new(Mutex::new(AriaosAssets::default()));
     let capture_delay = vision.capture_interval();
     
     // Use a sleep that resets after each tick completes, rather than a fixed interval
@@ -86,7 +87,8 @@ async fn main() -> Result<()> {
                     &synth,
                     &storage,
                     &composite_renderer,
-                    &optical_assets
+                    &optical_assets,
+                    &ariaos_assets
                 ).await {
                     error!(?err, "Perception tick failed");
                 }
@@ -102,6 +104,7 @@ async fn main() -> Result<()> {
                         &storage,
                         &mut observation_buffer,
                         &optical_assets,
+                        &ariaos_assets,
                         &bridge_handle
                     ).await {
                         error!(?err, "Failed to handle client event");
@@ -125,6 +128,7 @@ async fn perception_tick(
     storage: &Storage,
     composite_renderer: &CompositeRenderer,
     optical_assets: &Arc<Mutex<OpticalAssets>>,
+    ariaos_assets: &Arc<Mutex<AriaosAssets>>,
 ) -> Result<()> {
     // Flush any pending user messages into chat history before processing
     let pending_messages = buffer.flush_pending_messages();
@@ -172,8 +176,14 @@ async fn perception_tick(
         &history,
     );
 
-    // Ingest screen with composite for vision analysis
-    let observation = buffer.ingest_screen(frame, Some(composite_image.clone()));
+    // Get current ARIAOS image for VLM
+    let ariaos_image = {
+        let assets = ariaos_assets.lock().await;
+        Some(assets.current.clone())
+    };
+
+    // Ingest screen with composite and ARIAOS for vision analysis
+    let observation = buffer.ingest_screen(frame, Some(composite_image.clone()), ariaos_image);
 
     bridge.broadcast(DaemonMessage::ObservationSnapshot {
         active_app: "unknown".into(),
@@ -238,6 +248,9 @@ async fn perception_tick(
             
             // Record this screenshot as an approved one for visual history
             buffer.record_approved_screenshot(composite_image.clone());
+            
+            // Record ARIAOS snapshot for history
+            ariaos_assets.lock().await.record_approved();
 
             let audio = synth.synthesize(&text)?;
             let audio_b64 = BASE64.encode(audio);
@@ -271,6 +284,14 @@ async fn perception_tick(
             }),
         }],
     })?;
+    
+    // Request ARIAOS render from Godot
+    bridge.broadcast(DaemonMessage::RenderAriaos {
+        ariaos_state: serde_json::json!({
+            "activity": observation.screen_summary.notes,
+            "timestamp": Utc::now().timestamp()
+        }),
+    })?;
 
     // Persist composite snapshot for the debug window
     let composite_b64 = encode_image_base64(&composite_image)?;
@@ -278,6 +299,16 @@ async fn perception_tick(
         decision: serde_json::json!({"composite": composite_b64}),
         observation: serde_json::json!({ "kind": "composite" }),
     })?;
+    
+    // Send ARIAOS image to debug window
+    {
+        let assets = ariaos_assets.lock().await;
+        let ariaos_b64 = encode_image_base64(&assets.current)?;
+        bridge.broadcast(DaemonMessage::DecisionUpdate {
+            decision: serde_json::json!({"ariaos": ariaos_b64}),
+            observation: serde_json::json!({ "kind": "ariaos" }),
+        })?;
+    }
 
     Ok(())
 }
@@ -287,6 +318,7 @@ async fn handle_client_message(
     storage: &Storage,
     buffer: &mut ObservationBuffer,
     optical_assets: &Arc<Mutex<OpticalAssets>>,
+    ariaos_assets: &Arc<Mutex<AriaosAssets>>,
     bridge: &BridgeHandle,
 ) -> Result<()> {
     match message {
@@ -337,6 +369,13 @@ async fn handle_client_message(
                 assets.status = img;
             }
         }
+        ClientMessage::AriaosRenderResult { image } => {
+            if let Some(img) = decode_png(&image) {
+                let mut assets = ariaos_assets.lock().await;
+                assets.current = img;
+                log_event(bridge, "debug", "ARIAOS render received");
+            }
+        }
         ClientMessage::DebugCommand { command, payload } => {
             bridge.broadcast(DaemonMessage::DecisionUpdate {
                 decision: serde_json::json!({ "debug_command": command, "payload": payload }),
@@ -382,6 +421,38 @@ impl Default for OpticalAssets {
             memory: blank.clone(),
             chat: blank.clone(),
             status: blank,
+        }
+    }
+}
+
+/// ARIAOS assets - the companion's self-managed display
+#[derive(Clone)]
+struct AriaosAssets {
+    /// Current rendered ARIAOS image (1024x768)
+    current: image::RgbaImage,
+    /// Historical approved snapshots (captured when Aria responds)
+    approved_history: Vec<image::RgbaImage>,
+    /// Max history to keep
+    max_history: usize,
+}
+
+impl Default for AriaosAssets {
+    fn default() -> Self {
+        let blank = ImageBuffer::from_pixel(1024, 768, Rgba([15, 20, 30, 255]));
+        Self {
+            current: blank,
+            approved_history: Vec::new(),
+            max_history: 4,
+        }
+    }
+}
+
+impl AriaosAssets {
+    /// Record current ARIAOS as an approved snapshot (call when Aria responds)
+    fn record_approved(&mut self) {
+        self.approved_history.insert(0, self.current.clone());
+        if self.approved_history.len() > self.max_history {
+            self.approved_history.pop();
         }
     }
 }

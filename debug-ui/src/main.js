@@ -67,6 +67,11 @@ function handleWireMessage(msg) {
           active_window: '',
           active_app: ''
         });
+      } else if (msg.decision?.ariaos) {
+        handleDaemonEvent({
+          type: 'ariaos_update',
+          image_base64: msg.decision.ariaos
+        });
       } else if (msg.decision?.should_respond !== undefined) {
         handleDaemonEvent({
           type: 'arbiter_decision',
@@ -130,6 +135,7 @@ const connectionStatus = document.getElementById('connection-status');
 const decisionLog = document.getElementById('decision-log');
 const logStream = document.getElementById('log-stream');
 const screenPreview = document.getElementById('screen-preview');
+const ariaosPreview = document.getElementById('ariaos-preview');
 const activeWindow = document.getElementById('active-window');
 const activeApp = document.getElementById('active-app');
 const visionAnalysis = document.getElementById('vision-analysis');
@@ -249,6 +255,10 @@ function handleDaemonEvent(event) {
       updateScreenPreview(event);
       break;
       
+    case 'ariaos_update':
+      updateAriaosPreview(event);
+      break;
+      
     case 'speak':
       // Could highlight the speaking character
       break;
@@ -319,6 +329,12 @@ function updateScreenPreview(data) {
   
   activeWindow.textContent = data.active_window || '-';
   activeApp.textContent = data.active_app || '-';
+}
+
+function updateAriaosPreview(data) {
+  if (data.image_base64) {
+    ariaosPreview.innerHTML = `<img src="data:image/png;base64,${data.image_base64}" alt="ARIAOS">`;
+  }
 }
 
 function updateVisionAnalysis(data) {

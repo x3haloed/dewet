@@ -10,6 +10,7 @@ signal disconnected
 signal speak_requested(character_id: String, text: String, audio: PackedByteArray, mood: String, urgency: float)
 signal react_requested(character_id: String, expression: String)
 signal render_optical_memory_requested(chat_history: Array, memory_nodes: Array)
+signal render_ariaos_requested(ariaos_state: Dictionary)
 signal screen_capture_received(image_base64: String, timestamp: int, active_window: String, active_app: String)
 signal arbiter_decision_received(decision: Dictionary)
 signal log_received(level: String, message: String, timestamp: int)
@@ -123,6 +124,11 @@ func _handle_message(json_str: String) -> void:
 				msg.get("memory_nodes", [])
 			)
 		
+		"render_ariaos":
+			render_ariaos_requested.emit(
+				msg.get("ariaos_state", {})
+			)
+		
 		"screen_capture":
 			screen_capture_received.emit(
 				msg.get("image_base64", ""),
@@ -157,6 +163,14 @@ func send_rendered_images(memory_png: PackedByteArray, chat_png: PackedByteArray
 		"memory": Marshalls.raw_to_base64(memory_png),
 		"chat": Marshalls.raw_to_base64(chat_png),
 		"status": Marshalls.raw_to_base64(status_png),
+	})
+
+
+## Send rendered ARIAOS image back to daemon
+func send_ariaos_image(ariaos_png: PackedByteArray) -> void:
+	_send({
+		"type": "ariaos_render_result",
+		"image": Marshalls.raw_to_base64(ariaos_png),
 	})
 
 

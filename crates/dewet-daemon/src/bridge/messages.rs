@@ -15,6 +15,10 @@ pub enum ClientMessage {
         chat: String,
         status: String,
     },
+    /// ARIAOS rendered image from Godot
+    AriaosRenderResult {
+        image: String,
+    },
     DebugCommand {
         command: String,
         #[serde(default)]
@@ -43,6 +47,10 @@ pub enum DaemonMessage {
     RenderOpticalMemory {
         chat_history: Vec<ChatPacket>,
         memory_nodes: Vec<MemoryNode>,
+    },
+    /// Request ARIAOS render from Godot
+    RenderAriaos {
+        ariaos_state: Value,
     },
     DecisionUpdate {
         decision: Value,

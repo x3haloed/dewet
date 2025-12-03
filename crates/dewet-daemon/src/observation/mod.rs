@@ -83,6 +83,7 @@ impl ObservationBuffer {
         &mut self,
         frame: VisionFrame,
         composite: Option<RgbaImage>,
+        ariaos: Option<RgbaImage>,
     ) -> Observation {
         let summary = ScreenSummary::from_frame(&frame);
         self.screen_history.push_back(summary.clone());
@@ -96,6 +97,7 @@ impl ObservationBuffer {
         Observation {
             frame,
             composite,
+            ariaos,
             screen_summary: summary,
             recent_chat: filtered_chat,
             all_chat: self.chat_history.iter().cloned().collect(),
@@ -223,6 +225,8 @@ impl ScreenSummary {
 pub struct Observation {
     pub frame: VisionFrame,
     pub composite: Option<RgbaImage>,
+    /// ARIAOS rendered image (companion's self-managed display)
+    pub ariaos: Option<RgbaImage>,
     pub screen_summary: ScreenSummary,
     /// Filtered chat for VLM (hot + warm only, limited)
     pub recent_chat: Vec<ChatPacket>,

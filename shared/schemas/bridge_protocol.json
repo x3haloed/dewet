@@ -89,6 +89,22 @@
       "required": ["type"]
     },
     {
+      "title": "RenderAriaos",
+      "properties": {
+        "type": { "const": "render_ariaos" },
+        "ariaos_state": { "type": "object", "description": "ARIAOS DSL state to render" }
+      },
+      "required": ["type"]
+    },
+    {
+      "title": "AriaosRenderResult",
+      "properties": {
+        "type": { "const": "ariaos_render_result" },
+        "image": { "type": "string", "description": "PNG base64 of rendered ARIAOS (1024x768)" }
+      },
+      "required": ["type", "image"]
+    },
+    {
       "title": "DecisionUpdate",
       "properties": {
         "type": { "const": "decision_update" },

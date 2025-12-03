@@ -96,8 +96,8 @@ main {
 
 .panel-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, minmax(250px, 1fr));
+  grid-template-columns: 1fr 1fr 1.2fr;
+  grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr) minmax(280px, 1.2fr);
   gap: var(--space-lg);
   height: calc(100vh - 120px);
 }
@@ -126,6 +126,11 @@ main {
 #control-panel {
   grid-row: 2;
   grid-column: 2;
+}
+
+#ariaos-panel {
+  grid-row: 3;
+  grid-column: 1 / 4;
 }
 
 /* Panels */
@@ -217,6 +222,27 @@ main {
   font-size: 0.75rem;
   font-family: var(--font-mono);
   color: var(--text-secondary);
+}
+
+/* ARIAOS Preview */
+#ariaos-preview {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#ariaos-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+#ariaos-panel .panel-content {
+  padding: var(--space-sm);
 }
 
 /* Log Stream */

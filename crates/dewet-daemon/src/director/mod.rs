@@ -59,9 +59,35 @@ impl Director {
             .as_ref()
             .ok_or_else(|| anyhow!("No composite image available"))?;
 
-        let image_b64 = encode_rgba_to_base64(composite)?;
+        // Build list of images: composite first, then ARIAOS if available
+        let mut images = vec![encode_rgba_to_base64(composite)?];
+        let has_ariaos = observation.ariaos.is_some();
+        if let Some(ariaos) = &observation.ariaos {
+            images.push(encode_rgba_to_base64(ariaos)?);
+        }
 
-        let prompt = r#"You are observing Dewet's context through 4 quadrants:
+        let prompt = if has_ariaos {
+            r#"You are observing Dewet's context through TWO images:
+
+**IMAGE 1 - USER'S WORLD** (4 quadrants):
+- TOP-LEFT (DESKTOP): The user's current screen.
+- TOP-RIGHT (MEMORY MAP): Spatial visualization of recent topics.
+- BOTTOM-LEFT (RECENT CHAT): The conversation history.
+- BOTTOM-RIGHT (COMPANIONS): Active AI companions.
+
+**IMAGE 2 - ARIAOS** (Companion's self-managed display):
+This is YOUR personal dashboard showing your notes, focus tracking, and activity log.
+Review what you've noted and consider it in your analysis.
+
+Analyze this context and provide:
+1. What is the user currently doing? (Be specific: app, task, content)
+2. Does this warrant any companion response?
+3. If so, what triggered this (user question, interesting activity, long silence)?
+4. Rate each companion's likely interest in the current activity (0.0-1.0).
+
+Be concise but specific."#.to_string()
+        } else {
+            r#"You are observing Dewet's context through 4 quadrants:
 
 **TOP-LEFT (DESKTOP)**: The user's current screen.
 **TOP-RIGHT (MEMORY MAP)**: Spatial visualization of recent topics and their relationships.
@@ -74,7 +100,8 @@ Analyze this context and provide:
 3. If so, what triggered this (user question, interesting activity, long silence)?
 4. Rate each companion's likely interest in the current activity (0.0-1.0).
 
-Be concise but specific."#;
+Be concise but specific."#.to_string()
+        };
 
         let schema = json!({
             "type": "object",
@@ -102,7 +129,7 @@ Be concise but specific."#;
 
         let response = self
             .llm
-            .complete_vision_json(&self.models.decision, prompt, vec![image_b64], schema)
+            .complete_vision_json(&self.models.decision, &prompt, images, schema)
             .await?;
 
         let analysis: VisionAnalysis = serde_json::from_value(response)?;
@@ -199,9 +226,13 @@ Be concise but specific."#;
         
         // Use vision model if composite image is available
         let mut text = if let Some(composite) = &observation.composite {
-            let image_b64 = encode_rgba_to_base64(composite)?;
+            // Build list of images: composite first, then ARIAOS if available
+            let mut images = vec![encode_rgba_to_base64(composite)?];
+            if let Some(ariaos) = &observation.ariaos {
+                images.push(encode_rgba_to_base64(ariaos)?);
+            }
             self.llm
-                .complete_vision_text(&self.models.response, &response_prompt, vec![image_b64])
+                .complete_vision_text(&self.models.response, &response_prompt, images)
                 .await?
         } else {
             self.llm
@@ -350,11 +381,20 @@ Be concise but specific."#;
             observation.screen_summary.notes.clone()
         };
         
+        let ariaos_note = if observation.ariaos.is_some() {
+            "\n\n# Your Dashboard (ARIAOS)\n\
+            The second image shows your personal ARIAOS display - your notes, focus tracking, \
+            and activity log. Use this context to inform your response, but don't explicitly \
+            mention ARIAOS to the user."
+        } else {
+            ""
+        };
+        
         format!(
             "You are {name} ({id}). {description}\n\n\
             Personality: {personality}\nScenario: {scenario}\n\
             Stay in voice and respond naturally.\n\n\
-            # What's Happening\n{screen}\n\n\
+            # What's Happening\n{screen}{ariaos}\n\n\
             # Recent Chat\n{chat}\n\n\
             Respond conversationally based on what you see and the conversation so far.",
             name = spec.name,
@@ -363,6 +403,7 @@ Be concise but specific."#;
             personality = spec.personality,
             scenario = spec.scenario,
             screen = screen_context,
+            ariaos = ariaos_note,
             chat = format_chat(&observation.recent_chat),
         )
     }
