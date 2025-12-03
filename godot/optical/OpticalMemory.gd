@@ -287,7 +287,10 @@ func _on_ariaos_render_request(_ariaos_state: Dictionary) -> void:
 	var ariaos_bytes := ariaos_image.save_png_to_buffer()
 	
 	if _bridge and _bridge.has_method("send_ariaos_image"):
+		print("[OpticalMemory] Sending ARIAOS image (%d bytes)" % ariaos_bytes.size())
 		_bridge.send_ariaos_image(ariaos_bytes)
+	else:
+		push_warning("[OpticalMemory] Cannot send ARIAOS: bridge=%s, has_method=%s" % [_bridge != null, _bridge.has_method("send_ariaos_image") if _bridge else false])
 
 
 ## Manually trigger ARIAOS render (for testing)

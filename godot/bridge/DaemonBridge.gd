@@ -147,6 +147,10 @@ func _handle_message(json_str: String) -> void:
 				msg.get("timestamp", 0)
 			)
 		
+		# Internal daemon messages - Godot doesn't need to act on these
+		"observation_snapshot", "vision_analysis", "decision_update":
+			pass
+		
 		_:
 			print("[DaemonBridge] Unknown message type: %s" % msg_type)
 
