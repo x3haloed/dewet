@@ -159,27 +159,29 @@ async fn perception_tick(
     let optical = optical_assets.lock().await.clone();
     
     // Get historical approved screenshots for context
-    let history: Vec<&image::RgbaImage> = buffer
-        .approved_screenshots()
-        .iter()
-        .map(|s| &s.image)
-        .collect();
-    
-    // Render composite with history if available
-    let composite_image = composite_renderer.render_with_history(
-        &CompositeParts {
-            desktop: frame.rgba(),
-            memory_visualization: optical.memory,
-            chat_transcript: optical.chat,
-            character_status: optical.status,
-        },
-        &history,
-    );
+    let composite_image = {
+        let approved = buffer.approved_screenshots();
+        let history: Vec<&image::RgbaImage> = approved
+            .iter()
+            .map(|s| &s.image)
+            .collect();
+        
+        // Render composite with history if available
+        composite_renderer.render_with_history(
+            &CompositeParts {
+                desktop: frame.rgba(),
+                memory_visualization: optical.memory,
+                chat_transcript: optical.chat,
+                character_status: optical.status,
+            },
+            &history,
+        )
+    };
 
-    // Get current ARIAOS image for VLM
+    // Get ARIAOS composite (with history) for VLM
     let ariaos_image = {
         let assets = ariaos_assets.lock().await;
-        Some(assets.current.clone())
+        Some(assets.render_composite())
     };
 
     // Ingest screen with composite and ARIAOS for vision analysis
@@ -293,6 +295,7 @@ async fn perception_tick(
         }),
     })?;
 
+    
     // Persist composite snapshot for the debug window
     let composite_b64 = encode_image_base64(&composite_image)?;
     bridge.broadcast(DaemonMessage::DecisionUpdate {
@@ -300,10 +303,11 @@ async fn perception_tick(
         observation: serde_json::json!({ "kind": "composite" }),
     })?;
     
-    // Send ARIAOS image to debug window
+    // Send ARIAOS composite (with history) to debug window
     {
         let assets = ariaos_assets.lock().await;
-        let ariaos_b64 = encode_image_base64(&assets.current)?;
+        let ariaos_composite = assets.render_composite();
+        let ariaos_b64 = encode_image_base64(&ariaos_composite)?;
         bridge.broadcast(DaemonMessage::DecisionUpdate {
             decision: serde_json::json!({"ariaos": ariaos_b64}),
             observation: serde_json::json!({ "kind": "ariaos" }),
@@ -453,6 +457,108 @@ impl AriaosAssets {
         self.approved_history.insert(0, self.current.clone());
         if self.approved_history.len() > self.max_history {
             self.approved_history.pop();
+        }
+    }
+    
+    /// Render composite with current ARIAOS + history filmstrip
+    /// Layout: [CURRENT (large)] [PREV 1]
+    ///                           [PREV 2]
+    ///                           [PREV 3]
+    fn render_composite(&self) -> RgbaImage {
+        use image::imageops::{resize, FilterType};
+        
+        if self.approved_history.is_empty() {
+            // No history, just return current
+            return self.current.clone();
+        }
+        
+        // Layout: current takes 75%, history filmstrip takes 25%
+        let total_width = 1536u32;  // Wider to accommodate history
+        let total_height = 768u32;
+        let current_width = (total_width * 3) / 4;  // 75%
+        let history_width = total_width - current_width;  // 25%
+        
+        let mut canvas = ImageBuffer::from_pixel(total_width, total_height, Rgba([15, 20, 30, 255]));
+        
+        // Draw current ARIAOS (scaled to fit left portion)
+        let current_scaled = resize(&self.current, current_width, total_height, FilterType::CatmullRom);
+        for (x, y, pixel) in current_scaled.enumerate_pixels() {
+            if x < canvas.width() && y < canvas.height() {
+                canvas.put_pixel(x, y, *pixel);
+            }
+        }
+        
+        // Draw history filmstrip on the right
+        let hist_count = self.approved_history.len().min(3);
+        let hist_panel_height = total_height / 3;
+        
+        for (i, hist_img) in self.approved_history.iter().take(3).enumerate() {
+            let y_offset = (i as u32) * hist_panel_height;
+            let hist_scaled = resize(hist_img, history_width, hist_panel_height, FilterType::CatmullRom);
+            
+            for (x, y, pixel) in hist_scaled.enumerate_pixels() {
+                let tx = current_width + x;
+                let ty = y_offset + y;
+                if tx < canvas.width() && ty < canvas.height() {
+                    canvas.put_pixel(tx, ty, *pixel);
+                }
+            }
+            
+            // Draw label
+            Self::draw_label(&mut canvas, current_width + 4, y_offset + 12, &format!("PREV {}", i + 1));
+        }
+        
+        // Fill remaining slots with placeholder
+        for i in hist_count..3 {
+            let y_offset = (i as u32) * hist_panel_height;
+            Self::draw_label(&mut canvas, current_width + 4, y_offset + 12, "NO HIST");
+        }
+        
+        // Draw "ARIAOS" label on current
+        Self::draw_label(&mut canvas, 8, 12, "ARIAOS");
+        
+        canvas
+    }
+    
+    fn draw_label(canvas: &mut RgbaImage, x: u32, y: u32, text: &str) {
+        // Simple text rendering (reuse the same approach as composite.rs)
+        let mut cursor = x;
+        for ch in text.chars() {
+            if let Some(pattern) = Self::glyph_pattern(ch) {
+                for (row, bits) in pattern.iter().enumerate() {
+                    for col in 0..5 {
+                        if (bits >> (4 - col)) & 1 == 1 {
+                            let px = cursor + col as u32;
+                            let py = y + row as u32;
+                            if px < canvas.width() && py < canvas.height() {
+                                canvas.put_pixel(px, py, Rgba([255, 255, 255, 255]));
+                            }
+                        }
+                    }
+                }
+            }
+            cursor += 6;
+        }
+    }
+    
+    fn glyph_pattern(ch: char) -> Option<&'static [u8; 7]> {
+        match ch {
+            'A' => Some(&[0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001]),
+            'I' => Some(&[0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111]),
+            'O' => Some(&[0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110]),
+            'R' => Some(&[0b11110, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001, 0b10001]),
+            'S' => Some(&[0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110]),
+            'P' => Some(&[0b11110, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000, 0b10000]),
+            'E' => Some(&[0b11111, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000, 0b11111]),
+            'V' => Some(&[0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100]),
+            'N' => Some(&[0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001]),
+            'H' => Some(&[0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001, 0b10001]),
+            'T' => Some(&[0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100]),
+            '1' => Some(&[0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111]),
+            '2' => Some(&[0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111]),
+            '3' => Some(&[0b01110, 0b10001, 0b00001, 0b00110, 0b00001, 0b10001, 0b01110]),
+            ' ' => Some(&[0, 0, 0, 0, 0, 0, 0]),
+            _ => None,
         }
     }
 }
