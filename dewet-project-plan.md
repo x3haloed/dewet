@@ -7,6 +7,7 @@
 **Dewet** is a desktop buddy app that watches what you're doing, maintains persistent character-driven conversations, and offers contextually-aware commentary through one or more AI personalities.
 
 refs:
+substrate: /Users/chad/Repos/substrate
 vtube-bot: /Users/chad/Repos/vtube-bot
 Vampire: /Users/chad/Repos/vampire
 
