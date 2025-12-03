@@ -52,14 +52,14 @@ func _create_bubble(sender: String, content: String) -> Control:
 	var style = StyleBoxFlat.new()
 	style.bg_color = COLORS.get(sender.to_lower(), COLORS["default"])
 	style.bg_color.a = 0.9
-	style.corner_radius_top_left = 12
-	style.corner_radius_top_right = 12
-	style.corner_radius_bottom_left = 12 if is_user else 4
-	style.corner_radius_bottom_right = 4 if is_user else 12
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
+	style.corner_radius_top_left = 14
+	style.corner_radius_top_right = 14
+	style.corner_radius_bottom_left = 14 if is_user else 4
+	style.corner_radius_bottom_right = 4 if is_user else 14
+	style.content_margin_left = 16
+	style.content_margin_right = 16
+	style.content_margin_top = 12
+	style.content_margin_bottom = 12
 	panel.add_theme_stylebox_override("panel", style)
 	
 	# Create content container
@@ -69,9 +69,9 @@ func _create_bubble(sender: String, content: String) -> Control:
 	# Add sender label (except for user)
 	if not is_user:
 		var sender_label = Label.new()
-		sender_label.text = sender
-		sender_label.add_theme_font_size_override("font_size", 11)
-		sender_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+		sender_label.text = sender.capitalize()
+		sender_label.add_theme_font_size_override("font_size", 16)
+		sender_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 		vbox.add_child(sender_label)
 	
 	# Add message content
@@ -80,8 +80,10 @@ func _create_bubble(sender: String, content: String) -> Control:
 	content_label.fit_content = true
 	content_label.bbcode_enabled = false
 	content_label.scroll_active = false
-	content_label.custom_minimum_size.x = 100
+	content_label.custom_minimum_size.x = 150
 	content_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	content_label.add_theme_font_size_override("normal_font_size", 18)
+	content_label.add_theme_font_size_override("bold_font_size", 18)
 	content_label.add_theme_color_override("default_color", Color.WHITE)
 	vbox.add_child(content_label)
 	

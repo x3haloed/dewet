@@ -31,7 +31,8 @@ func _setup_visuals() -> void:
 	# In production, this would load actual character sprites/models
 	
 	_sprite = Sprite2D.new()
-	_sprite.position = Vector2(200, 100)  # Center in puppet area
+	_sprite.position = Vector2(275, 120)  # Center in larger puppet area
+	_sprite.scale = Vector2(1.5, 1.5)  # Scale up the avatar
 	add_child(_sprite)
 	
 	# Create a placeholder texture (colored circle)
@@ -46,16 +47,16 @@ func _setup_visuals() -> void:
 	
 	# Create speech indicator (three dots)
 	_speech_indicator = Node2D.new()
-	_speech_indicator.position = Vector2(200, 170)
+	_speech_indicator.position = Vector2(275, 220)
 	_speech_indicator.visible = false
 	add_child(_speech_indicator)
 	
 	for i in range(3):
 		var dot = Sprite2D.new()
-		var dot_img = Image.create(8, 8, false, Image.FORMAT_RGBA8)
+		var dot_img = Image.create(12, 12, false, Image.FORMAT_RGBA8)
 		dot_img.fill(Color.WHITE)
 		dot.texture = ImageTexture.create_from_image(dot_img)
-		dot.position = Vector2((i - 1) * 16, 0)
+		dot.position = Vector2((i - 1) * 20, 0)
 		_speech_indicator.add_child(dot)
 
 
@@ -165,8 +166,8 @@ func _process(delta: float) -> void:
 	
 	# Idle bobbing
 	if _sprite:
-		var bob = sin(_idle_time * 2.0) * 3.0
-		_sprite.position.y = 100 + bob
+		var bob = sin(_idle_time * 2.0) * 4.0
+		_sprite.position.y = 120 + bob
 	
 	# Speaking animation
 	if _is_speaking:
