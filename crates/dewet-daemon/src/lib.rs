@@ -1,3 +1,4 @@
+pub mod ariaos;
 pub mod bridge;
 pub mod character;
 pub mod config;

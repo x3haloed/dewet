@@ -23,6 +23,13 @@ var _chat_container: VBoxContainer
 var _status_container: VBoxContainer
 var _ariaos_container: Control
 
+# ARIAOS Notes app state
+var _notes_content: String = """• User seems focused - avoid interruptions
+• Remind about break at 3:00 PM
+• They asked about ARIAOS earlier
+• Current project: dewet daemon
+• Remember to check in after long silence periods"""
+
 
 
 func _ready() -> void:
@@ -35,6 +42,8 @@ func _ready() -> void:
 		_bridge.render_optical_memory_requested.connect(_on_render_request)
 		if _bridge.has_signal("render_ariaos_requested"):
 			_bridge.render_ariaos_requested.connect(_on_ariaos_render_request)
+		if _bridge.has_signal("ariaos_command_received"):
+			_bridge.ariaos_command_received.connect(_on_ariaos_commands)
 
 
 func _setup_viewports() -> void:
@@ -231,20 +240,16 @@ func _create_notes_app() -> Control:
 	content_bg.size = Vector2(app_size.x - 16, app_size.y - 100)
 	app.add_child(content_bg)
 	
-	# Notes content label
-	var notes_content := Label.new()
-	notes_content.text = """• User seems focused - avoid interruptions
-• Remind about break at 3:00 PM
-• They asked about ARIAOS earlier
-• Current project: dewet daemon
-• Remember to check in after long silence periods"""
-	notes_content.position = Vector2(20, 56)
-	notes_content.size = Vector2(app_size.x - 40, app_size.y - 124)
-	notes_content.add_theme_font_size_override("font_size", 15)
-	notes_content.add_theme_color_override("font_color", Color(0.82, 0.84, 0.90))
-	notes_content.autowrap_mode = TextServer.AUTOWRAP_WORD
-	notes_content.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	app.add_child(notes_content)
+	# Notes content label (uses stored _notes_content)
+	var notes_label := Label.new()
+	notes_label.text = _notes_content
+	notes_label.position = Vector2(20, 56)
+	notes_label.size = Vector2(app_size.x - 40, app_size.y - 124)
+	notes_label.add_theme_font_size_override("font_size", 15)
+	notes_label.add_theme_color_override("font_color", Color(0.82, 0.84, 0.90))
+	notes_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	notes_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	app.add_child(notes_label)
 	
 	# DSL affordance panel at bottom
 	var dsl_panel := ColorRect.new()
@@ -296,6 +301,56 @@ func _on_ariaos_render_request(_ariaos_state: Dictionary) -> void:
 ## Manually trigger ARIAOS render (for testing)
 func render_ariaos_now() -> void:
 	_on_ariaos_render_request({})
+
+
+## Handle ARIAOS DSL commands from the daemon
+func _on_ariaos_commands(commands: Array) -> void:
+	print("[OpticalMemory] Received %d ARIAOS command(s)" % commands.size())
+	
+	for cmd in commands:
+		var app: String = cmd.get("app", "")
+		var action: Dictionary = cmd.get("action", {})
+		
+		if app == "notes":
+			_handle_notes_command(action)
+	
+	# Re-render ARIAOS after applying commands
+	_populate_ariaos_demo()
+	_ariaos_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	
+	await get_tree().process_frame
+	await get_tree().process_frame
+	
+	var ariaos_image := _ariaos_viewport.get_texture().get_image()
+	var ariaos_bytes := ariaos_image.save_png_to_buffer()
+	
+	if _bridge and _bridge.has_method("send_ariaos_image"):
+		print("[OpticalMemory] Sending updated ARIAOS image (%d bytes)" % ariaos_bytes.size())
+		_bridge.send_ariaos_image(ariaos_bytes)
+
+
+## Handle Notes app DSL commands
+func _handle_notes_command(action: Dictionary) -> void:
+	var action_type: String = action.get("action", "")
+	var payload = action.get("payload")
+	
+	match action_type:
+		"set_content":
+			if payload is String:
+				_notes_content = payload
+				print("[OpticalMemory] Notes: set_content -> %d chars" % _notes_content.length())
+		"append":
+			if payload is String:
+				if _notes_content.length() > 0:
+					_notes_content += "\n" + payload
+				else:
+					_notes_content = payload
+				print("[OpticalMemory] Notes: append -> %d chars total" % _notes_content.length())
+		"clear":
+			_notes_content = ""
+			print("[OpticalMemory] Notes: cleared")
+		_:
+			push_warning("[OpticalMemory] Unknown notes action: %s" % action_type)
 
 
 func _on_render_request(chat_history: Array, memory_nodes: Array) -> void:

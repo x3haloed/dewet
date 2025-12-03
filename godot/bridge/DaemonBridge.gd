@@ -11,6 +11,7 @@ signal speak_requested(character_id: String, text: String, audio: PackedByteArra
 signal react_requested(character_id: String, expression: String)
 signal render_optical_memory_requested(chat_history: Array, memory_nodes: Array)
 signal render_ariaos_requested(ariaos_state: Dictionary)
+signal ariaos_command_received(commands: Array)
 signal screen_capture_received(image_base64: String, timestamp: int, active_window: String, active_app: String)
 signal arbiter_decision_received(decision: Dictionary)
 signal log_received(level: String, message: String, timestamp: int)
@@ -129,6 +130,11 @@ func _handle_message(json_str: String) -> void:
 				msg.get("ariaos_state", {})
 			)
 		
+		"ariaos_command":
+			ariaos_command_received.emit(
+				msg.get("commands", [])
+			)
+		
 		"screen_capture":
 			screen_capture_received.emit(
 				msg.get("image_base64", ""),
@@ -194,6 +200,16 @@ func reset_cooldowns() -> void:
 ## Request current state (debug)
 func get_state() -> void:
 	_send({"type": "get_state"})
+
+
+## Execute ARIAOS DSL commands directly (debug/testing)
+## Example: exec_dsl('ariaos.apps.notes.set_content("Hello world")')
+func exec_dsl(dsl_text: String) -> void:
+	_send({
+		"type": "debug_command",
+		"command": "exec_dsl",
+		"payload": {"text": dsl_text}
+	})
 
 
 ## Check if connected to daemon

@@ -52,6 +52,10 @@ pub enum DaemonMessage {
     RenderAriaos {
         ariaos_state: Value,
     },
+    /// Execute ARIAOS DSL commands
+    AriaosCommand {
+        commands: Value,
+    },
     DecisionUpdate {
         decision: Value,
         observation: Value,

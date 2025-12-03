@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info};
 
 use dewet_daemon::{
+    ariaos,
     bridge::{Bridge, BridgeHandle, ChatPacket, ClientMessage, DaemonMessage, MemoryNode, MemoryTier},
     character::{CharacterSpec, LoadedCharacter},
     config::AppConfig,
@@ -224,6 +225,30 @@ async fn perception_tick(
             urgency,
             suggested_mood,
         } => {
+            // Parse ARIAOS DSL commands from the response
+            log_event(
+                bridge,
+                "debug",
+                format!("Checking response for DSL commands: {}", &text[..text.len().min(200)]),
+            );
+            let dsl_commands = ariaos::parse_commands(&text);
+            let clean_text = if dsl_commands.is_empty() {
+                log_event(bridge, "debug", "No DSL commands found in response");
+                text.clone()
+            } else {
+                log_event(
+                    bridge,
+                    "info",
+                    format!("Parsed {} ARIAOS DSL command(s): {:?}", dsl_commands.len(), dsl_commands),
+                );
+                // Send DSL commands to Godot for execution
+                bridge.broadcast(DaemonMessage::AriaosCommand {
+                    commands: serde_json::to_value(&dsl_commands)?,
+                })?;
+                // Strip DSL from text for TTS/display
+                ariaos::strip_commands(&text)
+            };
+            
             bridge.broadcast(DaemonMessage::DecisionUpdate {
                 decision: json!({
                     "should_respond": true,
@@ -240,7 +265,7 @@ async fn perception_tick(
             // Record the assistant's response in chat history so future prompts see it
             let assistant_packet = ChatPacket {
                 sender: character_id.clone(),
-                content: text.clone(),
+                content: clean_text.clone(),
                 timestamp: Utc::now().timestamp(),
                 relevance: 1.0,
                 tier: MemoryTier::Hot,
@@ -254,11 +279,11 @@ async fn perception_tick(
             // Record ARIAOS snapshot for history
             ariaos_assets.lock().await.record_approved();
 
-            let audio = synth.synthesize(&text)?;
+            let audio = synth.synthesize(&clean_text)?;
             let audio_b64 = BASE64.encode(audio);
             bridge.broadcast(DaemonMessage::Speak {
                 character_id,
-                text,
+                text: clean_text,
                 audio_base64: Some(audio_b64),
                 puppet: serde_json::json!({
                     "mood": suggested_mood.unwrap_or_else(|| "neutral".into()),
@@ -381,10 +406,33 @@ async fn handle_client_message(
             }
         }
         ClientMessage::DebugCommand { command, payload } => {
-            bridge.broadcast(DaemonMessage::DecisionUpdate {
-                decision: serde_json::json!({ "debug_command": command, "payload": payload }),
-                observation: serde_json::json!({ "type": "debug_command" }),
-            })?;
+            match command.as_str() {
+                "exec_dsl" => {
+                    // Execute DSL commands directly for testing
+                    // payload should be { "text": "ariaos.apps.notes.set_content(\"test\")" }
+                    if let Some(text) = payload.get("text").and_then(|v| v.as_str()) {
+                        let dsl_commands = ariaos::parse_commands(text);
+                        if dsl_commands.is_empty() {
+                            log_event(bridge, "warn", format!("No DSL commands found in: {}", text));
+                        } else {
+                            log_event(
+                                bridge,
+                                "info",
+                                format!("Debug exec: {} DSL command(s)", dsl_commands.len()),
+                            );
+                            bridge.broadcast(DaemonMessage::AriaosCommand {
+                                commands: serde_json::to_value(&dsl_commands)?,
+                            })?;
+                        }
+                    }
+                }
+                _ => {
+                    bridge.broadcast(DaemonMessage::DecisionUpdate {
+                        decision: serde_json::json!({ "debug_command": command, "payload": payload }),
+                        observation: serde_json::json!({ "type": "debug_command" }),
+                    })?;
+                }
+            }
         }
     }
     Ok(())
