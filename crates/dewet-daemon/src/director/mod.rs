@@ -221,8 +221,9 @@ Be concise but specific."#.to_string()
 
         info!(responder_id = %responder_id, "Generating response...");
 
+        // Don't pass vision_analysis to response prompt - let the model see the images directly
         let response_prompt =
-            Self::build_response_prompt(&self.characters[responder_index].spec, observation, vision_analysis.as_ref());
+            Self::build_response_prompt(&self.characters[responder_index].spec, observation, None);
         
         // Use vision model if composite image is available
         let mut text = if let Some(composite) = &observation.composite {
