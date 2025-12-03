@@ -1,10 +1,10 @@
 [gd_scene load_steps=8 format=3 uid="uid://cn3iyxq8h6rku"]
 
-[ext_resource type="Script" path="res://main/Dewet.gd" id="1_main"]
-[ext_resource type="Script" path="res://chat/ChatWindow.gd" id="2_chat"]
-[ext_resource type="Script" path="res://puppet/PuppetController.gd" id="3_puppet"]
-[ext_resource type="Script" path="res://optical/OpticalMemory.gd" id="4_optical"]
-[ext_resource type="Script" path="res://main/DragHandle.gd" id="5_drag"]
+[ext_resource type="Script" uid="uid://bacjmdu1pv5is" path="res://main/Dewet.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://dbg7rwxqw6ly8" path="res://chat/ChatWindow.gd" id="2_chat"]
+[ext_resource type="Script" uid="uid://b7n3463okikwr" path="res://puppet/PuppetController.gd" id="3_puppet"]
+[ext_resource type="Script" uid="uid://df22j2ensoitl" path="res://optical/OpticalMemory.gd" id="4_optical"]
+[ext_resource type="Script" uid="uid://m5f3nc2ov0if" path="res://main/DragHandle.gd" id="5_drag"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
 bg_color = Color(0.12, 0.12, 0.14, 0.95)
@@ -119,19 +119,18 @@ theme_override_constants/separation = 10
 [node name="MessageInput" type="LineEdit" parent="MainContainer/ChatWindow/InputContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 24
 placeholder_text = "Type a message..."
-theme_override_font_sizes/font_size = 17
 
 [node name="SendButton" type="Button" parent="MainContainer/ChatWindow/InputContainer"]
 custom_minimum_size = Vector2(80, 0)
 layout_mode = 2
+theme_override_font_sizes/font_size = 22
 text = "Send"
-theme_override_font_sizes/font_size = 16
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="."]
 
 [node name="OpticalMemory" type="Control" parent="."]
 visible = false
+anchors_preset = 0
 script = ExtResource("4_optical")
-bridge_path = NodePath("/root/DaemonBridge")
-

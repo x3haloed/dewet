@@ -78,6 +78,38 @@ impl LlmClient for LmStudioClient {
         Ok(serde_json::from_str(&text)?)
     }
 
+    async fn complete_vision_text(
+        &self,
+        model: &str,
+        prompt: &str,
+        images_base64: Vec<String>,
+    ) -> Result<String> {
+        let mut content: Vec<Value> = images_base64
+            .into_iter()
+            .map(|img| {
+                json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:image/png;base64,{}", img)
+                    }
+                })
+            })
+            .collect();
+        content.push(json!({"type": "text", "text": prompt}));
+
+        let body = json!({
+            "model": model,
+            "messages": [{
+                "role": "user",
+                "content": content
+            }],
+            "stream": false
+        });
+
+        let resp = self.send(body).await?;
+        extract_text(&resp)
+    }
+
     async fn complete_vision_json(
         &self,
         model: &str,

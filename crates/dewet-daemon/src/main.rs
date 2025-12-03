@@ -54,14 +54,27 @@ async fn main() -> Result<()> {
 
     let mut vision = VisionPipeline::new(config.vision.clone());
     let mut observation_buffer = ObservationBuffer::new(config.observation.clone());
+    
+    // Hydrate observation buffer with recent chat from database
+    let recent_chat = storage.recent_chat(config.observation.chat_depth).await?;
+    for packet in recent_chat {
+        observation_buffer.record_chat(packet);
+    }
+    info!("Loaded {} chat messages from database", observation_buffer.chat_count());
+    
     let composite_renderer = CompositeRenderer::default();
 
     let optical_assets = Arc::new(Mutex::new(OpticalAssets::default()));
-    let mut ticker = tokio::time::interval(vision.capture_interval());
+    let capture_delay = vision.capture_interval();
+    
+    // Use a sleep that resets after each tick completes, rather than a fixed interval
+    // This prevents backpressure when LLM calls take longer than the interval
+    let mut next_tick = tokio::time::Instant::now();
 
     loop {
         tokio::select! {
-            _ = ticker.tick() => {
+            _ = tokio::time::sleep_until(next_tick) => {
+                let tick_start = std::time::Instant::now();
                 if let Err(err) = perception_tick(
                     &mut vision,
                     &mut observation_buffer,
@@ -74,6 +87,10 @@ async fn main() -> Result<()> {
                 ).await {
                     error!(?err, "Perception tick failed");
                 }
+                let elapsed = tick_start.elapsed();
+                info!("Perception tick completed in {:?}", elapsed);
+                // Schedule next tick AFTER this one completes
+                next_tick = tokio::time::Instant::now() + capture_delay;
             }
             next = bridge.next_message() => {
                 if let Some(msg) = next {
@@ -168,6 +185,15 @@ async fn perception_tick(
                     "screen_summary": observation.screen_summary.notes
                 }),
             })?;
+
+            // Record the assistant's response in chat history so future prompts see it
+            let assistant_packet = ChatPacket {
+                sender: character_id.clone(),
+                content: text.clone(),
+                timestamp: Utc::now().timestamp(),
+            };
+            storage.record_chat(&assistant_packet).await?;
+            buffer.record_chat(assistant_packet);
 
             let audio = synth.synthesize(&text)?;
             let audio_b64 = BASE64.encode(audio);

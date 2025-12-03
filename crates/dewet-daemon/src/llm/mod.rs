@@ -20,6 +20,13 @@ pub trait LlmClient: Send + Sync {
 
     async fn complete_json(&self, model: &str, prompt: &str, schema: Value) -> Result<Value>;
 
+    async fn complete_vision_text(
+        &self,
+        model: &str,
+        prompt: &str,
+        images_base64: Vec<String>,
+    ) -> Result<String>;
+
     async fn complete_vision_json(
         &self,
         model: &str,

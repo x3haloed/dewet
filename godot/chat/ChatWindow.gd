@@ -72,7 +72,7 @@ func _create_bubble(sender: String, content: String) -> Control:
 	if not is_user:
 		var sender_label = Label.new()
 		sender_label.text = sender.capitalize()
-		sender_label.add_theme_font_size_override("font_size", 16)
+		sender_label.add_theme_font_size_override("font_size", 24)
 		sender_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 		vbox.add_child(sender_label)
 	
@@ -83,8 +83,8 @@ func _create_bubble(sender: String, content: String) -> Control:
 	content_label.bbcode_enabled = false
 	content_label.scroll_active = false
 	content_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content_label.add_theme_font_size_override("normal_font_size", 18)
-	content_label.add_theme_font_size_override("bold_font_size", 18)
+	content_label.add_theme_font_size_override("normal_font_size", 24)
+	content_label.add_theme_font_size_override("bold_font_size", 24)
 	content_label.add_theme_color_override("default_color", Color.WHITE)
 	vbox.add_child(content_label)
 	
@@ -122,4 +122,3 @@ func _send_message() -> void:
 	# Clear input
 	message_input.text = ""
 	message_input.grab_focus()
-

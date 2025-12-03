@@ -195,11 +195,19 @@ Be concise but specific."#;
         info!(responder_id = %responder_id, "Generating response...");
 
         let response_prompt =
-            Self::build_response_prompt(&self.characters[responder_index].spec, observation);
-        let mut text = self
-            .llm
-            .complete_text(&self.models.response, &response_prompt)
-            .await?;
+            Self::build_response_prompt(&self.characters[responder_index].spec, observation, vision_analysis.as_ref());
+        
+        // Use vision model if composite image is available
+        let mut text = if let Some(composite) = &observation.composite {
+            let image_b64 = encode_rgba_to_base64(composite)?;
+            self.llm
+                .complete_vision_text(&self.models.response, &response_prompt, vec![image_b64])
+                .await?
+        } else {
+            self.llm
+                .complete_text(&self.models.response, &response_prompt)
+                .await?
+        };
 
         if let Some(audit_model) = &self.models.audit {
             text = match self
@@ -331,20 +339,30 @@ Be concise but specific."#;
         )
     }
 
-    fn build_response_prompt(spec: &CharacterSpec, observation: &Observation) -> String {
+    fn build_response_prompt(spec: &CharacterSpec, observation: &Observation, vision: Option<&VisionAnalysis>) -> String {
+        let screen_context = if let Some(v) = vision {
+            format!(
+                "**What you see**: {}\n**Why you're speaking**: {}",
+                v.activity,
+                v.response_trigger.as_deref().unwrap_or("general engagement")
+            )
+        } else {
+            observation.screen_summary.notes.clone()
+        };
+        
         format!(
             "You are {name} ({id}). {description}\n\n\
             Personality: {personality}\nScenario: {scenario}\n\
             Stay in voice and respond naturally.\n\n\
-            # Screen Summary\n{screen}\n\n\
+            # What's Happening\n{screen}\n\n\
             # Recent Chat\n{chat}\n\n\
-            Respond conversationally.",
+            Respond conversationally based on what you see and the conversation so far.",
             name = spec.name,
             id = spec.id,
             description = spec.description,
             personality = spec.personality,
             scenario = spec.scenario,
-            screen = observation.screen_summary.notes,
+            screen = screen_context,
             chat = format_chat(&observation.recent_chat),
         )
     }

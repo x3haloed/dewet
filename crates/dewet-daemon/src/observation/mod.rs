@@ -55,6 +55,10 @@ impl ObservationBuffer {
             self.chat_history.pop_front();
         }
     }
+    
+    pub fn chat_count(&self) -> usize {
+        self.chat_history.len()
+    }
 }
 
 #[derive(Clone)]

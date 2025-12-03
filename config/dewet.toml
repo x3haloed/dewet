@@ -3,7 +3,7 @@ listen_addr = "127.0.0.1:7777"
 max_clients = 4
 
 [vision]
-capture_interval_ms = 1500
+capture_interval_ms = 8000
 diff_threshold = 0.12
 max_history = 12
 
