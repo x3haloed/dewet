@@ -143,9 +143,11 @@ impl CompositeRenderer {
 
 impl Default for CompositeRenderer {
     fn default() -> Self {
+        // Use wider aspect ratio to better fit typical 16:9/16:10 screens
+        // This reduces letterboxing waste and keeps text readable
         Self {
-            width: 1536,
-            height: 1536,
+            width: 2048,
+            height: 1280,
         }
     }
 }
@@ -157,8 +159,41 @@ pub struct CompositeParts {
     pub character_status: RgbaImage,
 }
 
+/// Resize image to fit within bounds while preserving aspect ratio (letterboxing)
 fn resize_image(image: &RgbaImage, width: u32, height: u32) -> RgbaImage {
-    resize(image, width, height, FilterType::CatmullRom)
+    resize_with_letterbox(image, width, height, Rgba([10, 10, 12, 255]))
+}
+
+/// Resize image to fit within bounds, preserving aspect ratio with letterboxing
+fn resize_with_letterbox(image: &RgbaImage, target_w: u32, target_h: u32, bg_color: Rgba<u8>) -> RgbaImage {
+    let src_w = image.width() as f32;
+    let src_h = image.height() as f32;
+    let target_w_f = target_w as f32;
+    let target_h_f = target_h as f32;
+    
+    // Calculate scale to fit within bounds
+    let scale_w = target_w_f / src_w;
+    let scale_h = target_h_f / src_h;
+    let scale = scale_w.min(scale_h);
+    
+    // Calculate new dimensions
+    let new_w = (src_w * scale).round() as u32;
+    let new_h = (src_h * scale).round() as u32;
+    
+    // Resize the image
+    let resized = resize(image, new_w, new_h, FilterType::CatmullRom);
+    
+    // Create canvas with background color
+    let mut canvas = ImageBuffer::from_pixel(target_w, target_h, bg_color);
+    
+    // Calculate offset to center the image
+    let offset_x = (target_w.saturating_sub(new_w)) / 2;
+    let offset_y = (target_h.saturating_sub(new_h)) / 2;
+    
+    // Overlay resized image onto canvas
+    overlay(&mut canvas, offset_x, offset_y, &resized);
+    
+    canvas
 }
 
 fn overlay(canvas: &mut RgbaImage, x: u32, y: u32, src: &RgbaImage) {
