@@ -13,40 +13,129 @@ impl CompositeRenderer {
         Self { width, height }
     }
 
+    /// Render composite with optional historical screenshots
+    /// Layout with history:
+    /// +----------------+--------+
+    /// |                | HIST 1 |
+    /// |   DESKTOP      +--------+
+    /// |   (current)    | HIST 2 |
+    /// |                +--------+
+    /// |                | HIST 3 |
+    /// +--------+-------+--------+
+    /// | CHAT   | MEMORY| STATUS |
+    /// +--------+-------+--------+
     pub fn render(&self, parts: &CompositeParts) -> RgbaImage {
+        self.render_with_history(parts, &[])
+    }
+    
+    pub fn render_with_history(&self, parts: &CompositeParts, history: &[&RgbaImage]) -> RgbaImage {
         let mut canvas = ImageBuffer::from_pixel(self.width, self.height, Rgba([10, 10, 12, 255]));
-        let half_w = self.width / 2;
-        let half_h = self.height / 2;
+        
+        // Calculate layout based on whether we have history
+        let has_history = !history.is_empty();
+        
+        if has_history {
+            // Layout with history panel on the right
+            let history_width = self.width / 4;  // 25% for history
+            let main_width = self.width - history_width;  // 75% for main content
+            let top_height = (self.height * 2) / 3;  // Desktop takes 2/3 height
+            let bottom_height = self.height - top_height;
+            let bottom_panel_width = main_width / 3;
+            
+            // Desktop (large, top-left)
+            overlay(
+                &mut canvas,
+                0,
+                0,
+                &resize_image(&parts.desktop, main_width, top_height),
+            );
+            draw_label(&mut canvas, 12, 18, "DESKTOP");
+            
+            // History filmstrip (right column)
+            let hist_panel_height = top_height / 3;
+            for (i, hist_img) in history.iter().take(3).enumerate() {
+                let y = (i as u32) * hist_panel_height;
+                overlay(
+                    &mut canvas,
+                    main_width,
+                    y,
+                    &resize_image(hist_img, history_width, hist_panel_height),
+                );
+                // Label each history panel
+                let label = match i {
+                    0 => "PREV 1",
+                    1 => "PREV 2", 
+                    2 => "PREV 3",
+                    _ => "HIST",
+                };
+                draw_label(&mut canvas, main_width + 8, y + 14, label);
+            }
+            
+            // Fill remaining history slots with placeholder if needed
+            for i in history.len()..3 {
+                let y = (i as u32) * hist_panel_height;
+                draw_label(&mut canvas, main_width + 8, y + 14, "NO HIST");
+            }
+            
+            // Bottom row: Chat, Memory, Status
+            overlay(
+                &mut canvas,
+                0,
+                top_height,
+                &resize_image(&parts.chat_transcript, bottom_panel_width, bottom_height),
+            );
+            draw_label(&mut canvas, 12, top_height + 14, "RECENT CHAT");
+            
+            overlay(
+                &mut canvas,
+                bottom_panel_width,
+                top_height,
+                &resize_image(&parts.memory_visualization, bottom_panel_width, bottom_height),
+            );
+            draw_label(&mut canvas, bottom_panel_width + 8, top_height + 14, "MEMORY");
+            
+            overlay(
+                &mut canvas,
+                bottom_panel_width * 2,
+                top_height,
+                &resize_image(&parts.character_status, bottom_panel_width + history_width, bottom_height),
+            );
+            draw_label(&mut canvas, bottom_panel_width * 2 + 8, top_height + 14, "STATUS");
+        } else {
+            // Original 2x2 layout when no history
+            let half_w = self.width / 2;
+            let half_h = self.height / 2;
 
-        overlay(
-            &mut canvas,
-            0,
-            0,
-            &resize_image(&parts.desktop, half_w, half_h),
-        );
-        overlay(
-            &mut canvas,
-            half_w,
-            0,
-            &resize_image(&parts.memory_visualization, half_w, half_h),
-        );
-        overlay(
-            &mut canvas,
-            0,
-            half_h,
-            &resize_image(&parts.chat_transcript, half_w, half_h),
-        );
-        overlay(
-            &mut canvas,
-            half_w,
-            half_h,
-            &resize_image(&parts.character_status, half_w, half_h),
-        );
+            overlay(
+                &mut canvas,
+                0,
+                0,
+                &resize_image(&parts.desktop, half_w, half_h),
+            );
+            overlay(
+                &mut canvas,
+                half_w,
+                0,
+                &resize_image(&parts.memory_visualization, half_w, half_h),
+            );
+            overlay(
+                &mut canvas,
+                0,
+                half_h,
+                &resize_image(&parts.chat_transcript, half_w, half_h),
+            );
+            overlay(
+                &mut canvas,
+                half_w,
+                half_h,
+                &resize_image(&parts.character_status, half_w, half_h),
+            );
 
-        draw_label(&mut canvas, 12, 18, "DESKTOP");
-        draw_label(&mut canvas, half_w + 12, 18, "MEMORY MAP");
-        draw_label(&mut canvas, 12, half_h + 18, "RECENT CHAT");
-        draw_label(&mut canvas, half_w + 12, half_h + 18, "COMPANIONS");
+            draw_label(&mut canvas, 12, 18, "DESKTOP");
+            draw_label(&mut canvas, half_w + 12, 18, "MEMORY MAP");
+            draw_label(&mut canvas, 12, half_h + 18, "RECENT CHAT");
+            draw_label(&mut canvas, half_w + 12, half_h + 18, "COMPANIONS");
+        }
 
         canvas
     }

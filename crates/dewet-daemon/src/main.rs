@@ -123,15 +123,37 @@ async fn perception_tick(
     composite_renderer: &CompositeRenderer,
     optical_assets: &Arc<Mutex<OpticalAssets>>,
 ) -> Result<()> {
+    // Flush any pending user messages into chat history before processing
+    let pending_messages = buffer.flush_pending_messages();
+    if !pending_messages.is_empty() {
+        log_event(
+            bridge,
+            "info",
+            format!("Flushed {} pending user message(s) into chat history", pending_messages.len()),
+        );
+    }
+    
     let frame = vision.capture_frame()?;
 
     let optical = optical_assets.lock().await.clone();
-    let composite_image = composite_renderer.render(&CompositeParts {
-        desktop: frame.rgba(),
-        memory_visualization: optical.memory,
-        chat_transcript: optical.chat,
-        character_status: optical.status,
-    });
+    
+    // Get historical approved screenshots for context
+    let history: Vec<&image::RgbaImage> = buffer
+        .approved_screenshots()
+        .iter()
+        .map(|s| &s.image)
+        .collect();
+    
+    // Render composite with history if available
+    let composite_image = composite_renderer.render_with_history(
+        &CompositeParts {
+            desktop: frame.rgba(),
+            memory_visualization: optical.memory,
+            chat_transcript: optical.chat,
+            character_status: optical.status,
+        },
+        &history,
+    );
 
     // Ingest screen with composite for vision analysis
     let observation = buffer.ingest_screen(frame, Some(composite_image.clone()));
@@ -194,6 +216,9 @@ async fn perception_tick(
             };
             storage.record_chat(&assistant_packet).await?;
             buffer.record_chat(assistant_packet);
+            
+            // Record this screenshot as an approved one for visual history
+            buffer.record_approved_screenshot(composite_image.clone());
 
             let audio = synth.synthesize(&text)?;
             let audio_b64 = BASE64.encode(audio);
@@ -259,8 +284,10 @@ async fn handle_client_message(
                 content: text,
                 timestamp: Utc::now().timestamp(),
             };
+            // Store in DB immediately for persistence
             storage.record_chat(&packet).await?;
-            buffer.record_chat(packet.clone());
+            // Queue for batching - will be added to chat history at next perception tick
+            buffer.queue_user_message(packet.clone());
             bridge.broadcast(DaemonMessage::DecisionUpdate {
                 decision: serde_json::to_value(&packet)?,
                 observation: serde_json::json!({ "type": "user_chat" }),
@@ -269,7 +296,7 @@ async fn handle_client_message(
             log_event(
                 bridge,
                 "info",
-                format!("User message stored: {}", packet.content),
+                format!("User message queued (pending: {}): {}", buffer.pending_message_count(), packet.content),
             );
         }
         ClientMessage::OpticalRenderResult {
