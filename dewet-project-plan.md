@@ -1609,6 +1609,37 @@ impl LlmClient for OpenRouterClient {
 
 ---
 
+## Upcoming Initiatives
+
+### Initiative: Multi-Image Optical Memory Expansion
+- **Goal:** Increase the amount of visual evidence that reaches the arbiter by sending *packs* of optical memory plates instead of a single 4-up composite.
+- **Approach:**  
+  1. Teach `CompositeRenderer` to produce multiple themed canvases (e.g., `desktop_overview`, `focus_zoom`, `memory_map`, `system_status`).  
+  2. Extend the daemon ↔ Godot bridge protocol so `optical_render_result` can return an ordered list of PNGs with metadata tags.  
+  3. Update `LlmClient::complete_vision_json` usage to stream all plates to the vision model (models such as Gemini Flash accept multiple images per call).  
+  4. Persist each rendered plate alongside the observation to let the debug window show historical stacks.
+- **Outcome:** The arbiter/VLM can correlate zoomed-in UI elements with the wider desktop while still seeing memory/status imagery, improving grounding without needing ever-higher resolutions in a single bitmap.
+
+### Initiative: Archived Chat Plate
+- **Goal:** Dedicate an entire rendered image exclusively to *older* chat history so the on-screen text context (typically last ~2k tokens) is not duplicated, yet the VLM still has long-tail conversation awareness.
+- **Implementation Notes:**  
+  1. Observation buffer splits chat into `live_context` (already sent as text tokens) and `archive_context` (messages that fell out of the rolling text window).  
+  2. `TranscriptRenderer.gd` gets a “dense mode” that removes avatar chrome, collapses timestamps, and wraps text tightly so 200–300 lines fit in one 1536×1536 plate.  
+  3. The daemon labels this plate `chat_archive` and only emits it when the archive set changes, reducing redundant renders.  
+  4. Director prompts call out that *only* the archived plate contains historical chat; the textual context + other plates represent the present moment.  
+- **Outcome:** Models gain compressed long-term conversational recall without spending extra tokens, and we avoid echoing the same lines twice in the combined context.
+
+### Initiative: ARIAOS Self-Managed Display
+- **Concept:** Build **ARIAOS** (Agent-Rendered Interactive Ambient OS), a DSL + render target that lets companions draw their own “mini desktop” inside one quadrant of optical memory.
+- **Key Pieces:**  
+  1. Define a declarative DSL (YAML/TOML or custom S-expression) describing ARIAOS windows, widgets, charts, and notifications.  
+  2. Expose a safe API so characters can emit DSL snippets (“pin a todo”, “graph focus levels”) that the daemon validates before dispatching to Godot.  
+  3. Implement `AriaOsRenderer.gd` to interpret the DSL and render a faux-desktop layer (window frames, icons, terminal panes) into a dedicated plate; include affordances for user acknowledgement (e.g., click targets forwarded back through the bridge).  
+  4. Record ARIAOS state in Turso so characters can treat it as their personal HUD, with diffs mirrored in the debug window for transparency.  
+- **Outcome:** Companions gain a programmable surface for self-reflection, status dashboards, or playful UI without hijacking the user’s actual desktop, and the vision model sees both the user’s environment and the agent’s self-authored artifacts.
+
+---
+
 ## Unified App Packaging Plan
 
 1. **Single Host Process (Tauri)**  
