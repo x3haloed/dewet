@@ -73,6 +73,13 @@ pub struct ArbiterDecisionLog {
     pub context_summary: String,
 }
 
+/// ARIAOS Notes app state
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AriaosNotesState {
+    pub content: String,
+    pub scroll_offset: f32,
+}
+
 /// High-level storage wrapper that the daemon uses.
 #[derive(Clone)]
 pub struct Storage {
@@ -121,6 +128,16 @@ impl Storage {
             )
             .await?;
         Ok(())
+    }
+    
+    /// Save ARIAOS Notes state
+    pub async fn save_ariaos_notes(&self, state: &AriaosNotesState) -> Result<()> {
+        self.db.save_ariaos_notes(state).await
+    }
+    
+    /// Load ARIAOS Notes state
+    pub async fn load_ariaos_notes(&self) -> Result<Option<AriaosNotesState>> {
+        self.db.load_ariaos_notes().await
     }
 }
 

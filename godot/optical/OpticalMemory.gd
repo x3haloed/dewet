@@ -45,6 +45,8 @@ func _ready() -> void:
 			_bridge.render_ariaos_requested.connect(_on_ariaos_render_request)
 		if _bridge.has_signal("ariaos_command_received"):
 			_bridge.ariaos_command_received.connect(_on_ariaos_commands)
+		if _bridge.has_signal("ariaos_init_received"):
+			_bridge.ariaos_init_received.connect(_on_ariaos_init)
 
 
 func _setup_viewports() -> void:
@@ -361,6 +363,17 @@ func _on_ariaos_render_request(_ariaos_state: Dictionary) -> void:
 ## Manually trigger ARIAOS render (for testing)
 func render_ariaos_now() -> void:
 	_on_ariaos_render_request({})
+
+
+## Initialize ARIAOS state from daemon (on connection)
+func _on_ariaos_init(notes_content: String, notes_scroll: float) -> void:
+	print("[OpticalMemory] ARIAOS init: %d chars, scroll=%.0f" % [notes_content.length(), notes_scroll])
+	_notes_content = notes_content
+	_notes_scroll_offset = notes_scroll
+	
+	# Re-render with loaded state
+	_populate_ariaos_demo()
+	_ariaos_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 ## Handle ARIAOS DSL commands from the daemon

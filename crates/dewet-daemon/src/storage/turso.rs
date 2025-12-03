@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
-use super::{CharacterState, ChatMessage, Episode, ScreenContext, SpatialContext};
+use super::{AriaosNotesState, CharacterState, ChatMessage, Episode, ScreenContext, SpatialContext};
 
 /// Turso database client
 #[derive(Clone)]
@@ -147,6 +147,19 @@ impl TursoDb {
                 reasoning TEXT NOT NULL,
                 urgency REAL,
                 context_summary TEXT
+            )
+            "#,
+            (),
+        )
+        .await?;
+
+        // ARIAOS state table (key-value for app states)
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS ariaos_state (
+                app_id TEXT PRIMARY KEY,
+                state_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
             )
             "#,
             (),
@@ -505,6 +518,49 @@ impl TursoDb {
                 last_seen: now,
                 visit_count: 1,
             })
+        }
+    }
+    
+    /// Save ARIAOS Notes app state
+    pub async fn save_ariaos_notes(&self, state: &AriaosNotesState) -> Result<()> {
+        let conn = self.conn.lock().await;
+        let now = chrono::Utc::now().timestamp();
+        let state_json = serde_json::to_string(state)?;
+        
+        conn.execute(
+            r#"
+            INSERT INTO ariaos_state (app_id, state_json, updated_at)
+            VALUES ('notes', ?1, ?2)
+            ON CONFLICT(app_id) DO UPDATE SET
+                state_json = excluded.state_json,
+                updated_at = excluded.updated_at
+            "#,
+            params![state_json, now],
+        )
+        .await?;
+        
+        debug!("Saved ARIAOS notes state ({} chars)", state.content.len());
+        Ok(())
+    }
+    
+    /// Load ARIAOS Notes app state
+    pub async fn load_ariaos_notes(&self) -> Result<Option<AriaosNotesState>> {
+        let conn = self.conn.lock().await;
+        
+        let mut rows = conn
+            .query(
+                "SELECT state_json FROM ariaos_state WHERE app_id = 'notes'",
+                (),
+            )
+            .await?;
+        
+        if let Some(row) = rows.next().await? {
+            let state_json: String = row.get(0)?;
+            let state: AriaosNotesState = serde_json::from_str(&state_json)?;
+            debug!("Loaded ARIAOS notes state ({} chars)", state.content.len());
+            Ok(Some(state))
+        } else {
+            Ok(None)
         }
     }
 }

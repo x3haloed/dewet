@@ -12,6 +12,7 @@ signal react_requested(character_id: String, expression: String)
 signal render_optical_memory_requested(chat_history: Array, memory_nodes: Array)
 signal render_ariaos_requested(ariaos_state: Dictionary)
 signal ariaos_command_received(commands: Array)
+signal ariaos_init_received(notes_content: String, notes_scroll: float)
 signal screen_capture_received(image_base64: String, timestamp: int, active_window: String, active_app: String)
 signal arbiter_decision_received(decision: Dictionary)
 signal log_received(level: String, message: String, timestamp: int)
@@ -133,6 +134,12 @@ func _handle_message(json_str: String) -> void:
 		"ariaos_command":
 			ariaos_command_received.emit(
 				msg.get("commands", [])
+			)
+		
+		"ariaos_init":
+			ariaos_init_received.emit(
+				msg.get("notes_content", ""),
+				msg.get("notes_scroll", 0.0)
 			)
 		
 		"screen_capture":

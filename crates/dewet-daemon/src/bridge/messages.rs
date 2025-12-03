@@ -56,6 +56,11 @@ pub enum DaemonMessage {
     AriaosCommand {
         commands: Value,
     },
+    /// Initialize ARIAOS state (sent on startup)
+    AriaosInit {
+        notes_content: String,
+        notes_scroll: f32,
+    },
     DecisionUpdate {
         decision: Value,
         observation: Value,

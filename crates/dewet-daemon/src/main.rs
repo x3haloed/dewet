@@ -12,14 +12,14 @@ use tokio::sync::Mutex;
 use tracing::{error, info};
 
 use dewet_daemon::{
-    ariaos,
+    ariaos::{self, AriaosCommand, NotesAction},
     bridge::{Bridge, BridgeHandle, ChatPacket, ClientMessage, DaemonMessage, MemoryNode, MemoryTier},
     character::{CharacterSpec, LoadedCharacter},
     config::AppConfig,
     director::{Decision, Director},
     llm,
     observation::ObservationBuffer,
-    storage::Storage,
+    storage::{AriaosNotesState, Storage},
     tts,
     vision::{CompositeParts, CompositeRenderer, VisionPipeline},
 };
@@ -70,6 +70,11 @@ async fn main() -> Result<()> {
 
     let optical_assets = Arc::new(Mutex::new(OpticalAssets::default()));
     let ariaos_assets = Arc::new(Mutex::new(AriaosAssets::default()));
+    
+    // Load ARIAOS notes state from database
+    let initial_notes = storage.load_ariaos_notes().await?.unwrap_or_default();
+    info!("Loaded ARIAOS notes ({} chars)", initial_notes.content.len());
+    let notes_state = Arc::new(Mutex::new(initial_notes));
     let capture_delay = vision.capture_interval();
     
     // Use a sleep that resets after each tick completes, rather than a fixed interval
@@ -89,7 +94,8 @@ async fn main() -> Result<()> {
                     &storage,
                     &composite_renderer,
                     &optical_assets,
-                    &ariaos_assets
+                    &ariaos_assets,
+                    &notes_state,
                 ).await {
                     error!(?err, "Perception tick failed");
                 }
@@ -106,6 +112,7 @@ async fn main() -> Result<()> {
                         &mut observation_buffer,
                         &optical_assets,
                         &ariaos_assets,
+                        &notes_state,
                         &bridge_handle
                     ).await {
                         error!(?err, "Failed to handle client event");
@@ -130,6 +137,7 @@ async fn perception_tick(
     composite_renderer: &CompositeRenderer,
     optical_assets: &Arc<Mutex<OpticalAssets>>,
     ariaos_assets: &Arc<Mutex<AriaosAssets>>,
+    notes_state: &Arc<Mutex<AriaosNotesState>>,
 ) -> Result<()> {
     // Flush any pending user messages into chat history before processing
     let pending_messages = buffer.flush_pending_messages();
@@ -241,6 +249,14 @@ async fn perception_tick(
                     "info",
                     format!("Parsed {} ARIAOS DSL command(s): {:?}", dsl_commands.len(), dsl_commands),
                 );
+                
+                // Update local notes state and persist
+                {
+                    let mut notes = notes_state.lock().await;
+                    apply_notes_commands(&dsl_commands, &mut notes);
+                    storage.save_ariaos_notes(&notes).await?;
+                }
+                
                 // Send DSL commands to Godot for execution
                 bridge.broadcast(DaemonMessage::AriaosCommand {
                     commands: serde_json::to_value(&dsl_commands)?,
@@ -348,16 +364,24 @@ async fn handle_client_message(
     buffer: &mut ObservationBuffer,
     optical_assets: &Arc<Mutex<OpticalAssets>>,
     ariaos_assets: &Arc<Mutex<AriaosAssets>>,
+    notes_state: &Arc<Mutex<AriaosNotesState>>,
     bridge: &BridgeHandle,
 ) -> Result<()> {
     match message {
         ClientMessage::Ping { nonce } => {
+            // Send ARIAOS init state to newly connected client
+            let notes = notes_state.lock().await;
+            bridge.broadcast(DaemonMessage::AriaosInit {
+                notes_content: notes.content.clone(),
+                notes_scroll: notes.scroll_offset,
+            })?;
+            
             bridge.broadcast(DaemonMessage::DecisionUpdate {
                 decision: serde_json::json!({ "ping": nonce }),
                 observation: serde_json::json!({ "type": "ping" }),
             })?;
 
-            log_event(bridge, "debug", "Ping received from client");
+            log_event(bridge, "debug", "Ping received, sent ARIAOS init state");
         }
         ClientMessage::UserChat { text } => {
             let packet = ChatPacket {
@@ -420,6 +444,14 @@ async fn handle_client_message(
                                 "info",
                                 format!("Debug exec: {} DSL command(s)", dsl_commands.len()),
                             );
+                            
+                            // Update local notes state and persist
+                            {
+                                let mut notes = notes_state.lock().await;
+                                apply_notes_commands(&dsl_commands, &mut notes);
+                                storage.save_ariaos_notes(&notes).await?;
+                            }
+                            
                             bridge.broadcast(DaemonMessage::AriaosCommand {
                                 commands: serde_json::to_value(&dsl_commands)?,
                             })?;
@@ -450,6 +482,44 @@ fn log_event(bridge: &BridgeHandle, level: &str, message: impl Into<String>) {
         message: message.into(),
         timestamp: Utc::now().timestamp(),
     });
+}
+
+/// Apply ARIAOS DSL commands to notes state (for persistence)
+fn apply_notes_commands(commands: &[AriaosCommand], notes: &mut AriaosNotesState) {
+    for cmd in commands {
+        match cmd {
+            AriaosCommand::Notes(action) => match action {
+                NotesAction::SetContent(content) => {
+                    notes.content = content.clone();
+                    notes.scroll_offset = 0.0;
+                }
+                NotesAction::Append(content) => {
+                    if notes.content.is_empty() {
+                        notes.content = content.clone();
+                    } else {
+                        notes.content.push('\n');
+                        notes.content.push_str(content);
+                    }
+                }
+                NotesAction::Clear => {
+                    notes.content.clear();
+                    notes.scroll_offset = 0.0;
+                }
+                NotesAction::ScrollUp => {
+                    notes.scroll_offset = (notes.scroll_offset - 100.0).max(0.0);
+                }
+                NotesAction::ScrollDown => {
+                    notes.scroll_offset += 100.0;
+                }
+                NotesAction::ScrollToTop => {
+                    notes.scroll_offset = 0.0;
+                }
+                NotesAction::ScrollToBottom => {
+                    notes.scroll_offset = f32::MAX; // Will be clamped by Godot
+                }
+            },
+        }
+    }
 }
 
 fn encode_image_base64(image: &RgbaImage) -> Result<String> {
