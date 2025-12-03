@@ -71,6 +71,9 @@ func _process(delta: float) -> void:
 func _connect_to_daemon() -> void:
 	print("[DaemonBridge] Connecting to %s..." % _url)
 	_state = State.CONNECTING
+	# Increase buffer size to handle large messages (composite images are ~1MB)
+	_socket.inbound_buffer_size = 4 * 1024 * 1024  # 4MB
+	_socket.outbound_buffer_size = 1024 * 1024     # 1MB
 	var err = _socket.connect_to_url(_url)
 	if err != OK:
 		print("[DaemonBridge] Connection failed: %d" % err)

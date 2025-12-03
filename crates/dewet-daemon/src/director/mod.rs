@@ -140,6 +140,14 @@ Be concise but specific."#;
             .complete_json(&self.models.decision, &prompt, schema)
             .await?;
         let decision: ArbiterDecision = serde_json::from_value(response)?;
+        
+        info!(
+            should_respond = decision.should_respond,
+            responder = ?decision.responder_id,
+            urgency = decision.urgency,
+            reasoning = %decision.reasoning,
+            "Arbiter decision"
+        );
 
         self.storage
             .record_decision(&StoredDecision::now(
@@ -155,15 +163,20 @@ Be concise but specific."#;
         }
 
         let responder_id = match &decision.responder_id {
-            Some(id) => id.clone(),
-            None => return Ok((Decision::Pass, vision_analysis)),
+            Some(id) if !id.is_empty() => id.clone(),
+            _ => {
+                info!("Arbiter said respond but no responder_id given");
+                return Ok((Decision::Pass, vision_analysis));
+            }
         };
 
+        let available_ids: Vec<_> = self.characters.iter().map(|c| c.spec.id.as_str()).collect();
         let Some(responder_index) = self
             .characters
             .iter()
             .position(|c| c.spec.id == responder_id)
         else {
+            warn!(responder_id = %responder_id, available = ?available_ids, "Responder not found in character list");
             return Ok((Decision::Pass, vision_analysis));
         };
 
@@ -173,9 +186,12 @@ Be concise but specific."#;
                 .state
                 .is_on_cooldown(self.config.cooldown_after_speak())
             {
+                info!(responder_id = %responder_id, "Character on cooldown, skipping");
                 return Ok((Decision::Pass, vision_analysis));
             }
         }
+        
+        info!(responder_id = %responder_id, "Generating response...");
 
         let response_prompt =
             Self::build_response_prompt(&self.characters[responder_index].spec, observation);
