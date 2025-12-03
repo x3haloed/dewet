@@ -237,7 +237,7 @@ async fn perception_tick(
             log_event(
                 bridge,
                 "debug",
-                format!("Checking response for DSL commands: {}", &text[..text.len().min(200)]),
+                format!("Checking response for DSL commands: {}", &text[..text.floor_char_boundary(200)]),
             );
             let dsl_commands = ariaos::parse_commands(&text);
             let clean_text = if dsl_commands.is_empty() {
