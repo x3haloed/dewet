@@ -37,16 +37,18 @@ func _create_bubble(sender: String, content: String) -> Control:
 	# Determine alignment
 	var is_user = sender.to_lower() == "user"
 	
+	# Small margin spacer on the alignment side (bubble stretches nearly full width)
+	const MARGIN_SIZE = 24
+	
 	if is_user:
-		# Add spacer on left for right alignment
+		# Add small spacer on left for right alignment
 		var spacer = Control.new()
-		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		spacer.custom_minimum_size.x = 50
+		spacer.custom_minimum_size.x = MARGIN_SIZE
 		container.add_child(spacer)
 	
-	# Create the bubble panel
+	# Create the bubble panel - expands to fill available space
 	var panel = PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_SHRINK_END if is_user else Control.SIZE_SHRINK_BEGIN
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	# Style the bubble
 	var style = StyleBoxFlat.new()
@@ -64,7 +66,7 @@ func _create_bubble(sender: String, content: String) -> Control:
 	
 	# Create content container
 	var vbox = VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	
 	# Add sender label (except for user)
 	if not is_user:
@@ -74,14 +76,13 @@ func _create_bubble(sender: String, content: String) -> Control:
 		sender_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 		vbox.add_child(sender_label)
 	
-	# Add message content
+	# Add message content - expands to fill bubble width
 	var content_label = RichTextLabel.new()
 	content_label.text = content
 	content_label.fit_content = true
 	content_label.bbcode_enabled = false
 	content_label.scroll_active = false
-	content_label.custom_minimum_size.x = 150
-	content_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	content_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_label.add_theme_font_size_override("normal_font_size", 18)
 	content_label.add_theme_font_size_override("bold_font_size", 18)
 	content_label.add_theme_color_override("default_color", Color.WHITE)
@@ -91,10 +92,9 @@ func _create_bubble(sender: String, content: String) -> Control:
 	container.add_child(panel)
 	
 	if not is_user:
-		# Add spacer on right for left alignment
+		# Add small spacer on right for left alignment
 		var spacer = Control.new()
-		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		spacer.custom_minimum_size.x = 50
+		spacer.custom_minimum_size.x = MARGIN_SIZE
 		container.add_child(spacer)
 	
 	return container
