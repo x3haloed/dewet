@@ -40,13 +40,17 @@ pub fn create_client(config: &LlmConfig) -> SharedLlm {
     match &config.provider {
         LlmProvider::LmStudio { endpoint } => Arc::new(LmStudioClient::new(endpoint)),
         LlmProvider::OpenRouter {
-            api_key,
             site_url,
             site_name,
-        } => Arc::new(OpenRouterClient::new(
-            api_key,
-            site_url.clone(),
-            site_name.clone(),
-        )),
+            ..
+        } => {
+            let api_key = config.provider.openrouter_api_key()
+                .expect("OpenRouter requires api_key or api_key_env to be set");
+            Arc::new(OpenRouterClient::new(
+                &api_key,
+                site_url.clone(),
+                site_name.clone(),
+            ))
+        }
     }
 }

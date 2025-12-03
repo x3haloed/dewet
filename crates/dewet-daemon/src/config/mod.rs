@@ -235,12 +235,36 @@ pub enum LlmProvider {
     LmStudio { endpoint: String },
     #[serde(rename = "openrouter")]
     OpenRouter {
-        api_key: String,
+        /// API key - can be literal or read from env var if api_key_env is set
+        #[serde(default)]
+        api_key: Option<String>,
+        /// Environment variable name containing the API key
+        #[serde(default)]
+        api_key_env: Option<String>,
         #[serde(default)]
         site_url: Option<String>,
         #[serde(default)]
         site_name: Option<String>,
     },
+}
+
+impl LlmProvider {
+    /// Get the OpenRouter API key, checking env var if specified
+    pub fn openrouter_api_key(&self) -> Option<String> {
+        match self {
+            LlmProvider::OpenRouter { api_key, api_key_env, .. } => {
+                // First try env var
+                if let Some(env_name) = api_key_env {
+                    if let Ok(key) = std::env::var(env_name) {
+                        return Some(key);
+                    }
+                }
+                // Fall back to literal key
+                api_key.clone()
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
