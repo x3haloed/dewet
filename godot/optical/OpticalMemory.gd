@@ -243,7 +243,7 @@ func _create_notes_app() -> Control:
 	content_bg.size = Vector2(app_size.x - 16, app_size.y - 100)
 	app.add_child(content_bg)
 	
-	var content_height := app_size.y - 100
+	var content_height := app_size.y - 116
 	var content_width := app_size.x - 16
 	
 	# Clip container for scrolling
@@ -316,20 +316,27 @@ func _create_notes_app() -> Control:
 	# DSL affordance panel at bottom
 	var dsl_panel := ColorRect.new()
 	dsl_panel.color = Color(0.10, 0.11, 0.15, 1.0)
-	dsl_panel.position = Vector2(0, app_size.y - 48)
-	dsl_panel.size = Vector2(app_size.x, 48)
+	dsl_panel.position = Vector2(0, app_size.y - 64)
+	dsl_panel.size = Vector2(app_size.x, 64)
 	app.add_child(dsl_panel)
 	
 	var dsl_title := Label.new()
-	dsl_title.text = "DSL Commands:"
-	dsl_title.position = Vector2(12, app_size.y - 42)
+	dsl_title.text = "Usage: ariaos.apps.notes.<command>"
+	dsl_title.position = Vector2(12, app_size.y - 58)
 	dsl_title.add_theme_font_size_override("font_size", 10)
 	dsl_title.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
 	app.add_child(dsl_title)
 	
+	var dsl_example := Label.new()
+	dsl_example.text = "Example: ariaos.apps.notes.append(\"New note here\")"
+	dsl_example.position = Vector2(12, app_size.y - 42)
+	dsl_example.add_theme_font_size_override("font_size", 10)
+	dsl_example.add_theme_color_override("font_color", Color(0.45, 0.65, 0.50))
+	app.add_child(dsl_example)
+	
 	var dsl_commands := Label.new()
-	dsl_commands.text = "set_content(text) | append(text) | clear() | scroll_up() | scroll_down() | scroll_to_top() | scroll_to_bottom()"
-	dsl_commands.position = Vector2(12, app_size.y - 26)
+	dsl_commands.text = "set_content(\"...\") | append(\"...\") | clear() | scroll_up() | scroll_down()"
+	dsl_commands.position = Vector2(12, app_size.y - 24)
 	dsl_commands.add_theme_font_size_override("font_size", 11)
 	dsl_commands.add_theme_color_override("font_color", Color(0.55, 0.75, 0.90, 0.9))
 	app.add_child(dsl_commands)
