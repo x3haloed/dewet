@@ -23,6 +23,14 @@ pub enum NotesAction {
     Append(String),
     #[serde(rename = "clear")]
     Clear,
+    #[serde(rename = "scroll_up")]
+    ScrollUp,
+    #[serde(rename = "scroll_down")]
+    ScrollDown,
+    #[serde(rename = "scroll_to_top")]
+    ScrollToTop,
+    #[serde(rename = "scroll_to_bottom")]
+    ScrollToBottom,
 }
 
 /// Parse DSL commands from response text
@@ -60,6 +68,27 @@ pub fn parse_commands(text: &str) -> Vec<AriaosCommand> {
         commands.push(AriaosCommand::Notes(NotesAction::Clear));
     }
     
+    // Match scroll commands
+    let scroll_up_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_up\s*\(\s*\)"#).unwrap();
+    if scroll_up_re.is_match(text) {
+        commands.push(AriaosCommand::Notes(NotesAction::ScrollUp));
+    }
+    
+    let scroll_down_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_down\s*\(\s*\)"#).unwrap();
+    if scroll_down_re.is_match(text) {
+        commands.push(AriaosCommand::Notes(NotesAction::ScrollDown));
+    }
+    
+    let scroll_to_top_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_to_top\s*\(\s*\)"#).unwrap();
+    if scroll_to_top_re.is_match(text) {
+        commands.push(AriaosCommand::Notes(NotesAction::ScrollToTop));
+    }
+    
+    let scroll_to_bottom_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_to_bottom\s*\(\s*\)"#).unwrap();
+    if scroll_to_bottom_re.is_match(text) {
+        commands.push(AriaosCommand::Notes(NotesAction::ScrollToBottom));
+    }
+    
     commands
 }
 
@@ -69,6 +98,10 @@ pub fn strip_commands(text: &str) -> String {
         r#"ariaos\.apps\.notes\.set_content\s*\(\s*"[^"]*"\s*\)"#,
         r#"ariaos\.apps\.notes\.append\s*\(\s*"[^"]*"\s*\)"#,
         r#"ariaos\.apps\.notes\.clear\s*\(\s*\)"#,
+        r#"ariaos\.apps\.notes\.scroll_up\s*\(\s*\)"#,
+        r#"ariaos\.apps\.notes\.scroll_down\s*\(\s*\)"#,
+        r#"ariaos\.apps\.notes\.scroll_to_top\s*\(\s*\)"#,
+        r#"ariaos\.apps\.notes\.scroll_to_bottom\s*\(\s*\)"#,
     ];
     
     let mut result = text.to_string();

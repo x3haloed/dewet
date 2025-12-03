@@ -29,6 +29,7 @@ var _notes_content: String = """• User seems focused - avoid interruptions
 • They asked about ARIAOS earlier
 • Current project: dewet daemon
 • Remember to check in after long silence periods"""
+var _notes_scroll_offset: float = 0.0  # Scroll position in pixels
 
 
 
@@ -240,16 +241,75 @@ func _create_notes_app() -> Control:
 	content_bg.size = Vector2(app_size.x - 16, app_size.y - 100)
 	app.add_child(content_bg)
 	
-	# Notes content label (uses stored _notes_content)
+	var content_height := app_size.y - 100
+	var content_width := app_size.x - 16
+	
+	# Clip container for scrolling
+	var clip_container := Control.new()
+	clip_container.position = Vector2(8, 44)
+	clip_container.size = Vector2(content_width, content_height)
+	clip_container.clip_contents = true
+	app.add_child(clip_container)
+	
+	# Notes content label (uses stored _notes_content, offset by scroll)
 	var notes_label := Label.new()
 	notes_label.text = _notes_content
-	notes_label.position = Vector2(20, 56)
-	notes_label.size = Vector2(app_size.x - 40, app_size.y - 124)
+	notes_label.position = Vector2(12, 12 - _notes_scroll_offset)
+	notes_label.size = Vector2(content_width - 24, 0)  # Height auto-expands
 	notes_label.add_theme_font_size_override("font_size", 15)
 	notes_label.add_theme_color_override("font_color", Color(0.82, 0.84, 0.90))
 	notes_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	notes_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	app.add_child(notes_label)
+	clip_container.add_child(notes_label)
+	
+	# Calculate if we need scroll indicators
+	# Force label to calculate its size
+	notes_label.size.y = 10000  # Temporary large height
+	var text_height := notes_label.get_minimum_size().y
+	notes_label.size.y = text_height
+	
+	var can_scroll := text_height > content_height - 24
+	var at_top := _notes_scroll_offset <= 0
+	var at_bottom := _notes_scroll_offset >= (text_height - content_height + 24)
+	
+	# Scroll indicator (right edge)
+	if can_scroll:
+		var scroll_track := ColorRect.new()
+		scroll_track.color = Color(0.15, 0.17, 0.22, 1.0)
+		scroll_track.position = Vector2(content_width - 6, 4)
+		scroll_track.size = Vector2(4, content_height - 8)
+		clip_container.add_child(scroll_track)
+		
+		# Scroll thumb
+		var visible_ratio: float = content_height / text_height
+		var thumb_height: float = max(20.0, (content_height - 8) * visible_ratio)
+		var scroll_range: float = text_height - content_height + 24
+		var thumb_pos: float = 0.0
+		if scroll_range > 0:
+			thumb_pos = (_notes_scroll_offset / scroll_range) * (content_height - 8 - thumb_height)
+		
+		var scroll_thumb := ColorRect.new()
+		scroll_thumb.color = Color(0.4, 0.5, 0.7, 0.8)
+		scroll_thumb.position = Vector2(content_width - 6, 4 + thumb_pos)
+		scroll_thumb.size = Vector2(4, thumb_height)
+		clip_container.add_child(scroll_thumb)
+		
+		# Scroll hint arrows
+		if not at_top:
+			var up_arrow := Label.new()
+			up_arrow.text = "▲"
+			up_arrow.position = Vector2(content_width - 20, 2)
+			up_arrow.add_theme_font_size_override("font_size", 10)
+			up_arrow.add_theme_color_override("font_color", Color(0.5, 0.6, 0.8, 0.8))
+			clip_container.add_child(up_arrow)
+		
+		if not at_bottom:
+			var down_arrow := Label.new()
+			down_arrow.text = "▼"
+			down_arrow.position = Vector2(content_width - 20, content_height - 16)
+			down_arrow.add_theme_font_size_override("font_size", 10)
+			down_arrow.add_theme_color_override("font_color", Color(0.5, 0.6, 0.8, 0.8))
+			clip_container.add_child(down_arrow)
 	
 	# DSL affordance panel at bottom
 	var dsl_panel := ColorRect.new()
@@ -266,9 +326,9 @@ func _create_notes_app() -> Control:
 	app.add_child(dsl_title)
 	
 	var dsl_commands := Label.new()
-	dsl_commands.text = "ariaos.apps.notes.set_content(text)  |  ariaos.apps.notes.append(text)  |  ariaos.apps.notes.clear()"
+	dsl_commands.text = "set_content(text) | append(text) | clear() | scroll_up() | scroll_down() | scroll_to_top() | scroll_to_bottom()"
 	dsl_commands.position = Vector2(12, app_size.y - 26)
-	dsl_commands.add_theme_font_size_override("font_size", 12)
+	dsl_commands.add_theme_font_size_override("font_size", 11)
 	dsl_commands.add_theme_color_override("font_color", Color(0.55, 0.75, 0.90, 0.9))
 	app.add_child(dsl_commands)
 	
@@ -330,6 +390,8 @@ func _on_ariaos_commands(commands: Array) -> void:
 
 
 ## Handle Notes app DSL commands
+const SCROLL_STEP := 100.0  # Pixels per scroll command
+
 func _handle_notes_command(action: Dictionary) -> void:
 	var action_type: String = action.get("action", "")
 	var payload = action.get("payload")
@@ -338,6 +400,7 @@ func _handle_notes_command(action: Dictionary) -> void:
 		"set_content":
 			if payload is String:
 				_notes_content = payload
+				_notes_scroll_offset = 0.0  # Reset scroll on new content
 				print("[OpticalMemory] Notes: set_content -> %d chars" % _notes_content.length())
 		"append":
 			if payload is String:
@@ -348,7 +411,20 @@ func _handle_notes_command(action: Dictionary) -> void:
 				print("[OpticalMemory] Notes: append -> %d chars total" % _notes_content.length())
 		"clear":
 			_notes_content = ""
+			_notes_scroll_offset = 0.0
 			print("[OpticalMemory] Notes: cleared")
+		"scroll_up":
+			_notes_scroll_offset = max(0, _notes_scroll_offset - SCROLL_STEP)
+			print("[OpticalMemory] Notes: scroll_up -> offset %.0f" % _notes_scroll_offset)
+		"scroll_down":
+			_notes_scroll_offset += SCROLL_STEP
+			print("[OpticalMemory] Notes: scroll_down -> offset %.0f" % _notes_scroll_offset)
+		"scroll_to_top":
+			_notes_scroll_offset = 0.0
+			print("[OpticalMemory] Notes: scroll_to_top")
+		"scroll_to_bottom":
+			_notes_scroll_offset = 99999.0  # Will be clamped during render
+			print("[OpticalMemory] Notes: scroll_to_bottom")
 		_:
 			push_warning("[OpticalMemory] Unknown notes action: %s" % action_type)
 
