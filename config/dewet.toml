@@ -26,7 +26,7 @@ cooldown_after_speak_ms = 120000
 [llm]
 provider = { type = "openrouter", api_key_env = "OPENROUTER_API_KEY", site_url = "https://dewet.dev", site_name = "Dewet" }
 decision_model = "qwen/qwen2.5-vl-32b-instruct"  # Fast vision model for VLM analysis
-response_model = "qwen/qwen2.5-vl-32b-instruct"
+response_model = "x-ai/grok-4-fast"
 
 [tts]
 provider = "null"
