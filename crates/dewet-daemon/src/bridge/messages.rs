@@ -52,7 +52,7 @@ pub enum DaemonMessage {
     RenderAriaos {
         ariaos_state: Value,
     },
-    /// Execute ARIAOS DSL commands
+    /// Execute ARIAOS tool commands
     AriaosCommand {
         commands: Value,
     },

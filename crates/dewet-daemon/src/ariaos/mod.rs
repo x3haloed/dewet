@@ -1,11 +1,15 @@
-//! ARIAOS DSL parser and command handling
+//! ARIAOS tool definitions and command handling
 //!
-//! Parses DSL commands from companion responses and structures them for execution.
+//! Defines tools that companions can call to interact with their ARIAOS interface.
+//! Replaces the previous DSL-based approach with structured tool calling.
 
-use regex::Regex;
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
-/// A parsed ARIAOS DSL command
+use crate::llm::{ToolCall, ToolDefinition};
+
+/// A parsed ARIAOS command (internal representation)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "app", content = "action")]
 pub enum AriaosCommand {
@@ -33,140 +37,224 @@ pub enum NotesAction {
     ScrollToBottom,
 }
 
-/// Parse DSL commands from response text
-/// 
-/// Looks for patterns like:
-/// - `ariaos.apps.notes.set_content("text here")`
-/// - `ariaos.apps.notes.append("more text")`
-/// - `ariaos.apps.notes.clear()`
-pub fn parse_commands(text: &str) -> Vec<AriaosCommand> {
+/// Get tool definitions for ARIAOS capabilities.
+/// These are passed to the LLM so it knows what tools are available.
+pub fn ariaos_tools() -> Vec<ToolDefinition> {
+    vec![
+        ToolDefinition::new(
+            "notes_set_content",
+            "Replace all content in your personal notes with new text. Use this when you want to completely rewrite your notes.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The new content for your notes (replaces existing content)"
+                    }
+                },
+                "required": ["content"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "notes_append",
+            "Add a new line to your personal notes. Use this to add observations, reminders, or thoughts without erasing existing notes.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The text to append to your notes"
+                    }
+                },
+                "required": ["content"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "notes_clear",
+            "Clear all content from your personal notes. Use sparingly - only when you want a fresh start.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "notes_scroll_up",
+            "Scroll your notes view up to see earlier content.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "notes_scroll_down",
+            "Scroll your notes view down to see later content.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "notes_scroll_to_top",
+            "Scroll to the top of your notes.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "notes_scroll_to_bottom",
+            "Scroll to the bottom of your notes.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+    ]
+}
+
+/// Convert a tool call from the LLM into an ARIAOS command.
+/// Returns None if the tool call is not an ARIAOS tool.
+pub fn tool_call_to_command(tool_call: &ToolCall) -> Result<Option<AriaosCommand>> {
+    let name = &tool_call.function.name;
+    let args: Value = serde_json::from_str(&tool_call.function.arguments)
+        .unwrap_or(json!({}));
+
+    let command = match name.as_str() {
+        "notes_set_content" => {
+            let content = args
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("notes_set_content requires 'content' argument"))?
+                .to_string();
+            Some(AriaosCommand::Notes(NotesAction::SetContent(content)))
+        }
+        "notes_append" => {
+            let content = args
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("notes_append requires 'content' argument"))?
+                .to_string();
+            Some(AriaosCommand::Notes(NotesAction::Append(content)))
+        }
+        "notes_clear" => Some(AriaosCommand::Notes(NotesAction::Clear)),
+        "notes_scroll_up" => Some(AriaosCommand::Notes(NotesAction::ScrollUp)),
+        "notes_scroll_down" => Some(AriaosCommand::Notes(NotesAction::ScrollDown)),
+        "notes_scroll_to_top" => Some(AriaosCommand::Notes(NotesAction::ScrollToTop)),
+        "notes_scroll_to_bottom" => Some(AriaosCommand::Notes(NotesAction::ScrollToBottom)),
+        _ => None, // Not an ARIAOS tool
+    };
+
+    Ok(command)
+}
+
+/// Convert multiple tool calls to ARIAOS commands.
+/// Filters out non-ARIAOS tools and collects any errors.
+pub fn tool_calls_to_commands(tool_calls: &[ToolCall]) -> (Vec<AriaosCommand>, Vec<String>) {
     let mut commands = Vec::new();
-    
-    // Match ariaos.apps.notes.set_content("...")
-    let set_content_re = Regex::new(r#"ariaos\.apps\.notes\.set_content\s*\(\s*"([^"]*)"\s*\)"#).unwrap();
-    for cap in set_content_re.captures_iter(text) {
-        if let Some(content) = cap.get(1) {
-            commands.push(AriaosCommand::Notes(NotesAction::SetContent(
-                unescape_string(content.as_str())
-            )));
+    let mut errors = Vec::new();
+
+    for call in tool_calls {
+        match tool_call_to_command(call) {
+            Ok(Some(cmd)) => commands.push(cmd),
+            Ok(None) => {} // Not an ARIAOS tool, skip
+            Err(e) => errors.push(format!("{}: {}", call.function.name, e)),
         }
     }
-    
-    // Match ariaos.apps.notes.append("...")
-    let append_re = Regex::new(r#"ariaos\.apps\.notes\.append\s*\(\s*"([^"]*)"\s*\)"#).unwrap();
-    for cap in append_re.captures_iter(text) {
-        if let Some(content) = cap.get(1) {
-            commands.push(AriaosCommand::Notes(NotesAction::Append(
-                unescape_string(content.as_str())
-            )));
-        }
-    }
-    
-    // Match ariaos.apps.notes.clear()
-    let clear_re = Regex::new(r#"ariaos\.apps\.notes\.clear\s*\(\s*\)"#).unwrap();
-    if clear_re.is_match(text) {
-        commands.push(AriaosCommand::Notes(NotesAction::Clear));
-    }
-    
-    // Match scroll commands
-    let scroll_up_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_up\s*\(\s*\)"#).unwrap();
-    if scroll_up_re.is_match(text) {
-        commands.push(AriaosCommand::Notes(NotesAction::ScrollUp));
-    }
-    
-    let scroll_down_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_down\s*\(\s*\)"#).unwrap();
-    if scroll_down_re.is_match(text) {
-        commands.push(AriaosCommand::Notes(NotesAction::ScrollDown));
-    }
-    
-    let scroll_to_top_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_to_top\s*\(\s*\)"#).unwrap();
-    if scroll_to_top_re.is_match(text) {
-        commands.push(AriaosCommand::Notes(NotesAction::ScrollToTop));
-    }
-    
-    let scroll_to_bottom_re = Regex::new(r#"ariaos\.apps\.notes\.scroll_to_bottom\s*\(\s*\)"#).unwrap();
-    if scroll_to_bottom_re.is_match(text) {
-        commands.push(AriaosCommand::Notes(NotesAction::ScrollToBottom));
-    }
-    
-    commands
-}
 
-/// Strip DSL commands from text, returning the cleaned response
-pub fn strip_commands(text: &str) -> String {
-    let patterns = [
-        r#"ariaos\.apps\.notes\.set_content\s*\(\s*"[^"]*"\s*\)"#,
-        r#"ariaos\.apps\.notes\.append\s*\(\s*"[^"]*"\s*\)"#,
-        r#"ariaos\.apps\.notes\.clear\s*\(\s*\)"#,
-        r#"ariaos\.apps\.notes\.scroll_up\s*\(\s*\)"#,
-        r#"ariaos\.apps\.notes\.scroll_down\s*\(\s*\)"#,
-        r#"ariaos\.apps\.notes\.scroll_to_top\s*\(\s*\)"#,
-        r#"ariaos\.apps\.notes\.scroll_to_bottom\s*\(\s*\)"#,
-    ];
-    
-    let mut result = text.to_string();
-    for pattern in patterns {
-        let re = Regex::new(pattern).unwrap();
-        result = re.replace_all(&result, "").to_string();
-    }
-    
-    // Clean up any resulting double newlines or trailing whitespace
-    let multi_newline = Regex::new(r"\n{3,}").unwrap();
-    result = multi_newline.replace_all(&result, "\n\n").to_string();
-    result.trim().to_string()
-}
-
-/// Unescape common escape sequences in string content
-fn unescape_string(s: &str) -> String {
-    s.replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace("\\\"", "\"")
-        .replace("\\\\", "\\")
+    (commands, errors)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::FunctionCall;
 
     #[test]
-    fn test_parse_set_content() {
-        let text = r#"Let me update my notes: ariaos.apps.notes.set_content("User is debugging DSL")"#;
-        let commands = parse_commands(text);
-        assert_eq!(commands.len(), 1);
-        match &commands[0] {
-            AriaosCommand::Notes(NotesAction::SetContent(s)) => {
-                assert_eq!(s, "User is debugging DSL");
-            }
-            _ => panic!("Wrong command type"),
+    fn test_tool_call_set_content() {
+        let call = ToolCall {
+            id: "call_123".to_string(),
+            call_type: "function".to_string(),
+            function: FunctionCall {
+                name: "notes_set_content".to_string(),
+                arguments: r#"{"content": "Hello world"}"#.to_string(),
+            },
+        };
+
+        let result = tool_call_to_command(&call).unwrap();
+        assert!(matches!(
+            result,
+            Some(AriaosCommand::Notes(NotesAction::SetContent(s))) if s == "Hello world"
+        ));
+    }
+
+    #[test]
+    fn test_tool_call_append() {
+        let call = ToolCall {
+            id: "call_456".to_string(),
+            call_type: "function".to_string(),
+            function: FunctionCall {
+                name: "notes_append".to_string(),
+                arguments: r#"{"content": "New observation"}"#.to_string(),
+            },
+        };
+
+        let result = tool_call_to_command(&call).unwrap();
+        assert!(matches!(
+            result,
+            Some(AriaosCommand::Notes(NotesAction::Append(s))) if s == "New observation"
+        ));
+    }
+
+    #[test]
+    fn test_tool_call_clear() {
+        let call = ToolCall {
+            id: "call_789".to_string(),
+            call_type: "function".to_string(),
+            function: FunctionCall {
+                name: "notes_clear".to_string(),
+                arguments: "{}".to_string(),
+            },
+        };
+
+        let result = tool_call_to_command(&call).unwrap();
+        assert!(matches!(
+            result,
+            Some(AriaosCommand::Notes(NotesAction::Clear))
+        ));
+    }
+
+    #[test]
+    fn test_unknown_tool() {
+        let call = ToolCall {
+            id: "call_unknown".to_string(),
+            call_type: "function".to_string(),
+            function: FunctionCall {
+                name: "some_other_tool".to_string(),
+                arguments: "{}".to_string(),
+            },
+        };
+
+        let result = tool_call_to_command(&call).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_tools_definition() {
+        let tools = ariaos_tools();
+        assert_eq!(tools.len(), 7);
+
+        // Check that all tools have proper structure
+        for tool in &tools {
+            assert_eq!(tool.tool_type, "function");
+            assert!(!tool.function.name.is_empty());
+            assert!(!tool.function.description.is_empty());
         }
-    }
-
-    #[test]
-    fn test_parse_append() {
-        let text = r#"ariaos.apps.notes.append("New observation")"#;
-        let commands = parse_commands(text);
-        assert_eq!(commands.len(), 1);
-        match &commands[0] {
-            AriaosCommand::Notes(NotesAction::Append(s)) => {
-                assert_eq!(s, "New observation");
-            }
-            _ => panic!("Wrong command type"),
-        }
-    }
-
-    #[test]
-    fn test_parse_clear() {
-        let text = r#"Clearing notes: ariaos.apps.notes.clear()"#;
-        let commands = parse_commands(text);
-        assert_eq!(commands.len(), 1);
-        matches!(&commands[0], AriaosCommand::Notes(NotesAction::Clear));
-    }
-
-    #[test]
-    fn test_strip_commands() {
-        let text = r#"Hey there! ariaos.apps.notes.append("test") How are you?"#;
-        let cleaned = strip_commands(text);
-        assert_eq!(cleaned, "Hey there!  How are you?");
     }
 }
-

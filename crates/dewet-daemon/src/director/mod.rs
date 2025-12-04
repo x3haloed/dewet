@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tracing::{debug, info, warn};
 
 use crate::{
+    ariaos::{self, AriaosCommand},
     bridge::ChatPacket,
     character::{CharacterSpec, LoadedCharacter},
     config::DirectorConfig,
@@ -452,8 +453,8 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             });
         }
 
-        // STEP 4: Generate response using proper chat message structure
-        info!(responder_id = %responder_id, "Generating response...");
+        // STEP 4: Generate response using proper chat message structure with tool calling
+        info!(responder_id = %responder_id, "Generating response with tools...");
 
         // Build images list for the message
         let images = if let Some(composite) = &observation.composite {
@@ -477,19 +478,51 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
         let response_prompt_json = serde_json::to_string_pretty(&strip_images_for_logging(&response_messages))
             .unwrap_or_else(|_| "(failed to serialize)".to_string());
 
-        // Use chat completion for proper turn-taking
-        let mut text = self
+        // Get ARIAOS tools for the response model
+        let tools = ariaos::ariaos_tools();
+
+        // Use tool-enabled completion for response generation
+        let completion = self
             .clients
             .response
-            .complete_vision_chat(&self.clients.response_model, response_messages)
+            .complete_vision_with_tools(&self.clients.response_model, response_messages, tools)
             .await?;
+
+        // Extract text content (default to empty if model only made tool calls)
+        let mut text = completion.content.unwrap_or_default();
+
+        // Convert tool calls to ARIAOS commands
+        let (ariaos_commands, tool_errors) = ariaos::tool_calls_to_commands(&completion.tool_calls);
+        
+        // Log any tool conversion errors
+        for err in &tool_errors {
+            warn!(error = %err, "Failed to convert tool call");
+        }
+
+        // Log tool calls for debugging
+        let tool_call_summary: Vec<String> = completion.tool_calls
+            .iter()
+            .map(|tc| format!("{}({})", tc.function.name, tc.function.arguments))
+            .collect();
 
         prompt_logs.push(PromptLog {
             model_type: "response".to_string(),
             model_name: self.clients.response_model.clone(),
             prompt: response_prompt_json,
-            response: text.clone(),
+            response: format!(
+                "text: {}\ntool_calls: [{}]",
+                text,
+                tool_call_summary.join(", ")
+            ),
         });
+
+        if !ariaos_commands.is_empty() {
+            info!(
+                count = ariaos_commands.len(),
+                commands = ?ariaos_commands,
+                "Parsed ARIAOS tool calls"
+            );
+        }
 
         // Optional audit
         if let Some((audit_client, audit_model)) = &self.clients.audit {
@@ -529,6 +562,7 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
                 text,
                 urgency: 0.5,
                 suggested_mood: None,
+                tool_calls: ariaos_commands,
             },
             prompt_logs,
         })
@@ -837,6 +871,8 @@ pub enum Decision {
         urgency: f32,
         reasoning: String,
         suggested_mood: Option<String>,
+        /// ARIAOS tool calls from the response
+        tool_calls: Vec<AriaosCommand>,
     },
 }
 

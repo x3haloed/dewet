@@ -4,7 +4,7 @@ use serde_json::Value;
 use serde_json::json;
 use tracing;
 
-use super::{ChatMessage, LlmClient};
+use super::{ChatCompletionWithTools, ChatMessage, FunctionCall, LlmClient, ToolCall, ToolDefinition};
 
 pub struct LmStudioClient {
     http: Client,
@@ -188,6 +188,61 @@ impl LlmClient for LmStudioClient {
         let resp = self.send(body).await?;
         extract_text(&resp)
     }
+
+    async fn complete_with_tools(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        tools: Vec<ToolDefinition>,
+    ) -> Result<ChatCompletionWithTools> {
+        let messages_json: Vec<Value> = messages
+            .into_iter()
+            .map(|msg| serde_json::to_value(msg).unwrap())
+            .collect();
+
+        let tools_json: Vec<Value> = tools
+            .into_iter()
+            .map(|t| serde_json::to_value(t).unwrap())
+            .collect();
+
+        let body = json!({
+            "model": model,
+            "messages": messages_json,
+            "tools": tools_json,
+            "stream": false
+        });
+
+        let resp = self.send(body).await?;
+        extract_with_tools(&resp)
+    }
+
+    async fn complete_vision_with_tools(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        tools: Vec<ToolDefinition>,
+    ) -> Result<ChatCompletionWithTools> {
+        // Vision with tools uses the same format - images embedded in ChatContent::Multimodal
+        let messages_json: Vec<Value> = messages
+            .into_iter()
+            .map(|msg| serde_json::to_value(msg).unwrap())
+            .collect();
+
+        let tools_json: Vec<Value> = tools
+            .into_iter()
+            .map(|t| serde_json::to_value(t).unwrap())
+            .collect();
+
+        let body = json!({
+            "model": model,
+            "messages": messages_json,
+            "tools": tools_json,
+            "stream": false
+        });
+
+        let resp = self.send(body).await?;
+        extract_with_tools(&resp)
+    }
 }
 
 fn extract_text(resp: &Value) -> Result<String> {
@@ -219,4 +274,61 @@ fn extract_text(resp: &Value) -> Result<String> {
     }
 
     Err(anyhow!("Unable to extract text from LLM response"))
+}
+
+fn extract_with_tools(resp: &Value) -> Result<ChatCompletionWithTools> {
+    let choice = resp
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .ok_or_else(|| anyhow!("choices missing"))?;
+    let message = choice
+        .get("message")
+        .ok_or_else(|| anyhow!("message missing"))?;
+
+    // Extract text content (may be null if only tool calls)
+    let content = if let Some(text) = message.get("content") {
+        if text.is_null() {
+            None
+        } else if let Some(s) = text.as_str() {
+            if s.is_empty() { None } else { Some(s.to_string()) }
+        } else if let Some(items) = text.as_array() {
+            let mut combined = String::new();
+            for item in items {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    if let Some(chunk) = item.get("text").and_then(|t| t.as_str()) {
+                        combined.push_str(chunk);
+                    }
+                }
+            }
+            if combined.is_empty() { None } else { Some(combined) }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Extract tool calls
+    let tool_calls = if let Some(calls) = message.get("tool_calls").and_then(|v| v.as_array()) {
+        calls
+            .iter()
+            .filter_map(|call| {
+                let id = call.get("id")?.as_str()?.to_string();
+                let call_type = call.get("type")?.as_str()?.to_string();
+                let function = call.get("function")?;
+                let name = function.get("name")?.as_str()?.to_string();
+                let arguments = function.get("arguments")?.as_str()?.to_string();
+
+                Some(ToolCall {
+                    id,
+                    call_type,
+                    function: FunctionCall { name, arguments },
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(ChatCompletionWithTools { content, tool_calls })
 }

@@ -228,13 +228,13 @@ func _create_notes_app() -> Control:
 	title.add_theme_color_override("font_color", Color(0.85, 0.88, 0.95))
 	app.add_child(title)
 	
-	# DSL affordance in title bar (instead of window controls)
-	var dsl_hint := Label.new()
-	dsl_hint.text = "ariaos.apps.notes.minimize()"
-	dsl_hint.position = Vector2(app_size.x - 220, 10)
-	dsl_hint.add_theme_font_size_override("font_size", 11)
-	dsl_hint.add_theme_color_override("font_color", Color(0.45, 0.55, 0.70, 0.8))
-	app.add_child(dsl_hint)
+	# Tool affordance in title bar (instead of window controls)
+	var tool_hint := Label.new()
+	tool_hint.text = "tool: notes_scroll_to_top()"
+	tool_hint.position = Vector2(app_size.x - 200, 10)
+	tool_hint.add_theme_font_size_override("font_size", 11)
+	tool_hint.add_theme_color_override("font_color", Color(0.45, 0.55, 0.70, 0.8))
+	app.add_child(tool_hint)
 	
 	# Content area background
 	var content_bg := ColorRect.new()
@@ -313,33 +313,33 @@ func _create_notes_app() -> Control:
 			down_arrow.add_theme_color_override("font_color", Color(0.5, 0.6, 0.8, 0.8))
 			clip_container.add_child(down_arrow)
 	
-	# DSL affordance panel at bottom
-	var dsl_panel := ColorRect.new()
-	dsl_panel.color = Color(0.10, 0.11, 0.15, 1.0)
-	dsl_panel.position = Vector2(0, app_size.y - 64)
-	dsl_panel.size = Vector2(app_size.x, 64)
-	app.add_child(dsl_panel)
+	# Tool affordance panel at bottom
+	var tool_panel := ColorRect.new()
+	tool_panel.color = Color(0.10, 0.11, 0.15, 1.0)
+	tool_panel.position = Vector2(0, app_size.y - 64)
+	tool_panel.size = Vector2(app_size.x, 64)
+	app.add_child(tool_panel)
 	
-	var dsl_title := Label.new()
-	dsl_title.text = "Usage: ariaos.apps.notes.<command>"
-	dsl_title.position = Vector2(12, app_size.y - 58)
-	dsl_title.add_theme_font_size_override("font_size", 10)
-	dsl_title.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
-	app.add_child(dsl_title)
+	var tool_title := Label.new()
+	tool_title.text = "Available tools: notes_*"
+	tool_title.position = Vector2(12, app_size.y - 58)
+	tool_title.add_theme_font_size_override("font_size", 10)
+	tool_title.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
+	app.add_child(tool_title)
 	
-	var dsl_example := Label.new()
-	dsl_example.text = "Example: ariaos.apps.notes.append(\"New note here\")"
-	dsl_example.position = Vector2(12, app_size.y - 42)
-	dsl_example.add_theme_font_size_override("font_size", 10)
-	dsl_example.add_theme_color_override("font_color", Color(0.45, 0.65, 0.50))
-	app.add_child(dsl_example)
+	var tool_example := Label.new()
+	tool_example.text = "Example: notes_append({\"content\": \"New note here\"})"
+	tool_example.position = Vector2(12, app_size.y - 42)
+	tool_example.add_theme_font_size_override("font_size", 10)
+	tool_example.add_theme_color_override("font_color", Color(0.45, 0.65, 0.50))
+	app.add_child(tool_example)
 	
-	var dsl_commands := Label.new()
-	dsl_commands.text = "set_content(\"...\") | append(\"...\") | clear() | scroll_up() | scroll_down()"
-	dsl_commands.position = Vector2(12, app_size.y - 24)
-	dsl_commands.add_theme_font_size_override("font_size", 11)
-	dsl_commands.add_theme_color_override("font_color", Color(0.55, 0.75, 0.90, 0.9))
-	app.add_child(dsl_commands)
+	var tool_commands := Label.new()
+	tool_commands.text = "notes_set_content | notes_append | notes_clear | notes_scroll_up | notes_scroll_down"
+	tool_commands.position = Vector2(12, app_size.y - 24)
+	tool_commands.add_theme_font_size_override("font_size", 11)
+	tool_commands.add_theme_color_override("font_color", Color(0.55, 0.75, 0.90, 0.9))
+	app.add_child(tool_commands)
 	
 	return app
 
@@ -383,9 +383,9 @@ func _on_ariaos_init(notes_content: String, notes_scroll: float) -> void:
 	_ariaos_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
-## Handle ARIAOS DSL commands from the daemon
+## Handle ARIAOS tool commands from the daemon
 func _on_ariaos_commands(commands: Array) -> void:
-	print("[OpticalMemory] Received %d ARIAOS command(s)" % commands.size())
+	print("[OpticalMemory] Received %d ARIAOS tool command(s)" % commands.size())
 	
 	for cmd in commands:
 		var app: String = cmd.get("app", "")
@@ -409,7 +409,7 @@ func _on_ariaos_commands(commands: Array) -> void:
 		_bridge.send_ariaos_image(ariaos_bytes)
 
 
-## Handle Notes app DSL commands
+## Handle Notes app tool commands
 const SCROLL_STEP := 100.0  # Pixels per scroll command
 
 func _handle_notes_command(action: Dictionary) -> void:

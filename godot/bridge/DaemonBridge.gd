@@ -211,13 +211,13 @@ func get_state() -> void:
 	_send({"type": "get_state"})
 
 
-## Execute ARIAOS DSL commands directly (debug/testing)
-## Example: exec_dsl('ariaos.apps.notes.set_content("Hello world")')
-func exec_dsl(dsl_text: String) -> void:
+## Execute ARIAOS tool commands directly (debug/testing)
+## Example: exec_tool("notes_append", {"content": "Hello world"})
+func exec_tool(tool_name: String, args: Dictionary = {}) -> void:
 	_send({
 		"type": "debug_command",
-		"command": "exec_dsl",
-		"payload": {"text": dsl_text}
+		"command": "exec_tool",
+		"payload": {"tool": tool_name, "args": args}
 	})
 
 

@@ -15,6 +15,71 @@ use crate::config::{LlmConfig, LlmProvider, ModelConfig};
 
 pub type SharedLlm = Arc<dyn LlmClient>;
 
+/// Definition of a tool that can be called by the LLM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    /// The type of tool (always "function" for now)
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    /// The function definition
+    pub function: FunctionDefinition,
+}
+
+/// Function definition within a tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionDefinition {
+    /// Name of the function
+    pub name: String,
+    /// Description of what the function does
+    pub description: String,
+    /// JSON Schema for the function parameters
+    pub parameters: Value,
+}
+
+impl ToolDefinition {
+    /// Create a new tool definition
+    pub fn new(name: impl Into<String>, description: impl Into<String>, parameters: Value) -> Self {
+        Self {
+            tool_type: "function".to_string(),
+            function: FunctionDefinition {
+                name: name.into(),
+                description: description.into(),
+                parameters,
+            },
+        }
+    }
+}
+
+/// A tool call requested by the LLM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    /// Unique ID for this tool call
+    pub id: String,
+    /// Type of call (always "function")
+    #[serde(rename = "type")]
+    pub call_type: String,
+    /// The function being called
+    pub function: FunctionCall,
+}
+
+/// Function call details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionCall {
+    /// Name of the function to call
+    pub name: String,
+    /// JSON-encoded arguments
+    pub arguments: String,
+}
+
+/// Result of a chat completion that may include tool calls
+#[derive(Debug, Clone)]
+pub struct ChatCompletionWithTools {
+    /// Text content of the response (may be None if only tool calls)
+    pub content: Option<String>,
+    /// Tool calls requested by the model
+    pub tool_calls: Vec<ToolCall>,
+}
+
 /// A single message in a chat conversation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -151,6 +216,24 @@ pub trait LlmClient: Send + Sync {
         model: &str,
         messages: Vec<ChatMessage>,
     ) -> Result<String>;
+
+    /// Complete a chat conversation with tool calling support.
+    /// Returns both text content and any tool calls the model wants to make.
+    async fn complete_with_tools(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        tools: Vec<ToolDefinition>,
+    ) -> Result<ChatCompletionWithTools>;
+
+    /// Complete a vision chat with tool calling support.
+    /// Images should be embedded in the messages as ChatContent::Multimodal.
+    async fn complete_vision_with_tools(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        tools: Vec<ToolDefinition>,
+    ) -> Result<ChatCompletionWithTools>;
 }
 
 /// Collection of LLM clients for different roles
