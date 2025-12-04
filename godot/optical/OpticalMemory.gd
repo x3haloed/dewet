@@ -256,8 +256,14 @@ func _create_notes_app() -> Control:
 	# Notes content label (uses stored _notes_content, offset by scroll)
 	var notes_label := Label.new()
 	notes_label.text = _notes_content
-	notes_label.position = Vector2(12, 12 - _notes_scroll_offset)
-	notes_label.size = Vector2(content_width - 24, 0)  # Height auto-expands
+	# Use anchors to constrain width for proper text wrapping
+	notes_label.anchor_left = 0.0
+	notes_label.anchor_right = 1.0
+	notes_label.anchor_top = 0.0
+	notes_label.anchor_bottom = 0.0
+	notes_label.offset_left = 12
+	notes_label.offset_right = -12
+	notes_label.offset_top = 12 - _notes_scroll_offset
 	notes_label.add_theme_font_size_override("font_size", 15)
 	notes_label.add_theme_color_override("font_color", Color(0.82, 0.84, 0.90))
 	notes_label.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -265,10 +271,10 @@ func _create_notes_app() -> Control:
 	clip_container.add_child(notes_label)
 	
 	# Calculate if we need scroll indicators
-	# Force label to calculate its size
-	notes_label.size.y = 10000  # Temporary large height
+	# Force label to calculate its size - need to wait for layout
+	var label_width := content_width - 24
+	notes_label.custom_minimum_size.x = label_width
 	var text_height := notes_label.get_minimum_size().y
-	notes_label.size.y = text_height
 	
 	var can_scroll := text_height > content_height - 24
 	var at_top := _notes_scroll_offset <= 0
