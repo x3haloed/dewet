@@ -97,7 +97,7 @@ main {
 .panel-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1.2fr;
-  grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr) minmax(280px, 1.2fr);
+  grid-template-rows: minmax(180px, 1fr) minmax(180px, 1fr) minmax(200px, 0.8fr) minmax(200px, 1fr);
   gap: var(--space-lg);
   height: calc(100vh - 120px);
 }
@@ -125,6 +125,11 @@ main {
 
 #ariaos-panel {
   grid-row: 3;
+  grid-column: 1 / 4;
+}
+
+#prompt-panel {
+  grid-row: 4;
   grid-column: 1 / 4;
 }
 
@@ -344,6 +349,137 @@ main {
 
 .control-group button:active {
   transform: translateY(1px);
+}
+
+/* Prompt Log */
+#prompt-log {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.prompt-entry {
+  margin-bottom: var(--space-md);
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.prompt-entry-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  user-select: none;
+  border-left: 3px solid var(--border);
+}
+
+.prompt-entry-header:hover {
+  background: var(--bg-secondary);
+}
+
+.prompt-entry.arbiter .prompt-entry-header {
+  border-left-color: var(--accent);
+}
+
+.prompt-entry.response .prompt-entry-header {
+  border-left-color: var(--success);
+}
+
+.prompt-entry-toggle {
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.prompt-entry.expanded .prompt-entry-toggle {
+  transform: rotate(90deg);
+}
+
+.prompt-entry-type {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.prompt-entry.arbiter .prompt-entry-type {
+  color: var(--accent);
+}
+
+.prompt-entry.response .prompt-entry-type {
+  color: var(--success);
+}
+
+.prompt-entry-model {
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-entry-time {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.prompt-copy-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.prompt-copy-btn:hover {
+  opacity: 1;
+  background: var(--bg-tertiary);
+}
+
+.prompt-entry-body {
+  display: none;
+  padding: var(--space-md);
+  border-top: 1px solid var(--border);
+}
+
+.prompt-entry.expanded .prompt-entry-body {
+  display: block;
+}
+
+.prompt-section {
+  margin-bottom: var(--space-md);
+}
+
+.prompt-section:last-child {
+  margin-bottom: 0;
+}
+
+.prompt-section-title {
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-xs);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.prompt-section-content {
+  background: var(--bg-primary);
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+.prompt-section-content.response-content {
+  border-left: 2px solid var(--success);
 }
 
 /* Scrollbar */

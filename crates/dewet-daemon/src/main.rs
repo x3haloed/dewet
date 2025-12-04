@@ -203,9 +203,20 @@ async fn perception_tick(
         timestamp: Utc::now().timestamp(),
     })?;
 
-    let decision = director.evaluate(&observation).await?;
+    let eval_result = director.evaluate(&observation).await?;
 
-    match decision {
+    // Broadcast prompt logs for debugging
+    for log in &eval_result.prompt_logs {
+        bridge.broadcast(DaemonMessage::PromptLog {
+            model_type: log.model_type.clone(),
+            model_name: log.model_name.clone(),
+            prompt: log.prompt.clone(),
+            response: log.response.clone(),
+            timestamp: Utc::now().timestamp(),
+        })?;
+    }
+
+    match eval_result.decision {
         Decision::Pass { reasoning, urgency } => {
             // Broadcast pass decision for debug UI
             bridge.broadcast(DaemonMessage::DecisionUpdate {

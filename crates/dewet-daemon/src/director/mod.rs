@@ -52,22 +52,37 @@ impl Director {
         &self.characters
     }
 
-    pub async fn evaluate(&mut self, observation: &Observation) -> Result<Decision> {
+    pub async fn evaluate(&mut self, observation: &Observation) -> Result<EvaluateResult> {
+        let mut prompt_logs = Vec::new();
+
         if self.last_decision.elapsed() < self.config.min_decision_interval() {
-            return Ok(Decision::Pass {
-                reasoning: "Rate limited".to_string(),
-                urgency: 0.0,
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: "Rate limited".to_string(),
+                    urgency: 0.0,
+                },
+                prompt_logs,
             });
         }
         self.last_decision = Instant::now();
 
         // Build arbiter prompt with raw data only - no pre-baked VLM analysis
         let schema = arbiter_schema();
-        let prompt = self.build_arbiter_prompt(observation);
+        let arbiter_prompt = self.build_arbiter_prompt(observation);
         let response = self
             .llm
-            .complete_json(&self.models.decision, &prompt, schema)
+            .complete_json(&self.models.decision, &arbiter_prompt, schema)
             .await?;
+        
+        // Log the arbiter prompt/response
+        let arbiter_response_str = serde_json::to_string_pretty(&response).unwrap_or_default();
+        prompt_logs.push(PromptLog {
+            model_type: "arbiter".to_string(),
+            model_name: self.models.decision.clone(),
+            prompt: arbiter_prompt.clone(),
+            response: arbiter_response_str,
+        });
+
         let arbiter: ArbiterDecision = serde_json::from_value(response)?;
 
         info!(
@@ -88,9 +103,12 @@ impl Director {
             .await?;
 
         if !arbiter.should_respond {
-            return Ok(Decision::Pass {
-                reasoning: arbiter.reasoning,
-                urgency: arbiter.urgency,
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: arbiter.reasoning,
+                    urgency: arbiter.urgency,
+                },
+                prompt_logs,
             });
         }
 
@@ -98,9 +116,12 @@ impl Director {
             Some(id) if !id.is_empty() => id.clone(),
             _ => {
                 info!("Arbiter said respond but no responder_id given");
-                return Ok(Decision::Pass {
-                    reasoning: format!("{} (no responder_id)", arbiter.reasoning),
-                    urgency: arbiter.urgency,
+                return Ok(EvaluateResult {
+                    decision: Decision::Pass {
+                        reasoning: format!("{} (no responder_id)", arbiter.reasoning),
+                        urgency: arbiter.urgency,
+                    },
+                    prompt_logs,
                 });
             }
         };
@@ -112,9 +133,12 @@ impl Director {
             .position(|c| c.spec.id == responder_id)
         else {
             warn!(responder_id = %responder_id, available = ?available_ids, "Responder not found in character list");
-            return Ok(Decision::Pass {
-                reasoning: format!("{} (responder '{}' not found)", arbiter.reasoning, responder_id),
-                urgency: arbiter.urgency,
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: format!("{} (responder '{}' not found)", arbiter.reasoning, responder_id),
+                    urgency: arbiter.urgency,
+                },
+                prompt_logs,
             });
         };
 
@@ -125,9 +149,12 @@ impl Director {
                 .is_on_cooldown(self.config.cooldown_after_speak())
             {
                 info!(responder_id = %responder_id, "Character on cooldown, skipping");
-                return Ok(Decision::Pass {
-                    reasoning: format!("{} (on cooldown)", arbiter.reasoning),
-                    urgency: arbiter.urgency,
+                return Ok(EvaluateResult {
+                    decision: Decision::Pass {
+                        reasoning: format!("{} (on cooldown)", arbiter.reasoning),
+                        urgency: arbiter.urgency,
+                    },
+                    prompt_logs,
                 });
             }
         }
@@ -153,6 +180,14 @@ impl Director {
                 .await?
         };
 
+        // Log the response prompt/response
+        prompt_logs.push(PromptLog {
+            model_type: "response".to_string(),
+            model_name: self.models.response.clone(),
+            prompt: response_prompt,
+            response: text.clone(),
+        });
+
         if let Some(audit_model) = &self.models.audit {
             text = match self
                 .run_audit(
@@ -166,9 +201,12 @@ impl Director {
                 Ok(validated) => validated,
                 Err(err) => {
                     warn!(?err, "Audit rejected response");
-                    return Ok(Decision::Pass {
-                        reasoning: format!("{} (audit rejected: {})", arbiter.reasoning, err),
-                        urgency: arbiter.urgency,
+                    return Ok(EvaluateResult {
+                        decision: Decision::Pass {
+                            reasoning: format!("{} (audit rejected: {})", arbiter.reasoning, err),
+                            urgency: arbiter.urgency,
+                        },
+                        prompt_logs,
                     });
                 }
             };
@@ -178,12 +216,15 @@ impl Director {
             character.state.update_last_spoke();
         }
 
-        Ok(Decision::Speak {
-            character_id: responder_id,
-            reasoning: arbiter.reasoning,
-            text,
-            urgency: arbiter.urgency,
-            suggested_mood: arbiter.suggested_mood.clone(),
+        Ok(EvaluateResult {
+            decision: Decision::Speak {
+                character_id: responder_id,
+                reasoning: arbiter.reasoning,
+                text,
+                urgency: arbiter.urgency,
+                suggested_mood: arbiter.suggested_mood.clone(),
+            },
+            prompt_logs,
         })
     }
 
@@ -409,6 +450,25 @@ pub enum Decision {
         reasoning: String,
         suggested_mood: Option<String>,
     },
+}
+
+/// Log of a prompt/response exchange with a model
+#[derive(Debug, Clone)]
+pub struct PromptLog {
+    /// "arbiter" or "response"
+    pub model_type: String,
+    /// The model name used
+    pub model_name: String,
+    /// The full prompt text (images stripped)
+    pub prompt: String,
+    /// The model's response
+    pub response: String,
+}
+
+/// Result of evaluate() including prompt logs for debugging
+pub struct EvaluateResult {
+    pub decision: Decision,
+    pub prompt_logs: Vec<PromptLog>,
 }
 
 fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>

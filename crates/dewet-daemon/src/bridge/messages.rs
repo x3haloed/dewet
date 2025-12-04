@@ -83,6 +83,18 @@ pub enum DaemonMessage {
         message: String,
         timestamp: i64,
     },
+    /// Debug log of prompt/response for Arbiter or Response model
+    PromptLog {
+        /// "arbiter" or "response"
+        model_type: String,
+        /// The model name used
+        model_name: String,
+        /// The full prompt text (images stripped)
+        prompt: String,
+        /// The model's response
+        response: String,
+        timestamp: i64,
+    },
 }
 
 /// Memory tier for chat messages (Aria's "forgetting without amnesia")

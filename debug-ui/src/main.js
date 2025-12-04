@@ -89,6 +89,16 @@ function handleWireMessage(msg) {
         timestamp: msg.timestamp
       });
       break;
+    case 'prompt_log':
+      handleDaemonEvent({
+        type: 'prompt_log',
+        model_type: msg.model_type,
+        model_name: msg.model_name,
+        prompt: msg.prompt,
+        response: msg.response,
+        timestamp: msg.timestamp
+      });
+      break;
   }
 }
 
@@ -124,6 +134,7 @@ if (window.__TAURI__) {
 const connectionStatus = document.getElementById('connection-status');
 const decisionLog = document.getElementById('decision-log');
 const logStream = document.getElementById('log-stream');
+const promptLog = document.getElementById('prompt-log');
 const screenPreview = document.getElementById('screen-preview');
 const ariaosPreview = document.getElementById('ariaos-preview');
 const activeWindow = document.getElementById('active-window');
@@ -140,6 +151,7 @@ const reconnectBtn = document.getElementById('reconnect-btn');
 let connected = false;
 let decisions = [];
 let logs = [];
+let promptLogs = [];
 
 // Initialize
 async function init() {
@@ -235,6 +247,10 @@ function handleDaemonEvent(event) {
       addLog(event);
       break;
       
+    case 'prompt_log':
+      addPromptLog(event);
+      break;
+      
     case 'screen_capture':
       updateScreenPreview(event);
       break;
@@ -320,6 +336,76 @@ function updateAriaosPreview(data) {
     ariaosPreview.innerHTML = `<img src="data:image/png;base64,${data.image_base64}" alt="ARIAOS">`;
   }
 }
+
+function addPromptLog(log) {
+  promptLogs.unshift(log);
+  if (promptLogs.length > 30) promptLogs.pop();
+  
+  renderPromptLogs();
+}
+
+function renderPromptLogs() {
+  if (promptLogs.length === 0) {
+    promptLog.innerHTML = '<p class="placeholder">Waiting for model prompts...</p>';
+    return;
+  }
+  
+  promptLog.innerHTML = promptLogs.map((p, idx) => `
+    <div class="prompt-entry ${p.model_type}" data-idx="${idx}">
+      <div class="prompt-entry-header">
+        <span class="prompt-entry-toggle" onclick="togglePromptEntry(${idx})">▶</span>
+        <span class="prompt-entry-type" onclick="togglePromptEntry(${idx})">${p.model_type}</span>
+        <span class="prompt-entry-model" onclick="togglePromptEntry(${idx})">${escapeHtml(p.model_name)}</span>
+        <span class="prompt-entry-time" onclick="togglePromptEntry(${idx})">${formatTime(p.timestamp)}</span>
+        <button class="prompt-copy-btn" onclick="copyPromptEntry(${idx})" title="Copy to clipboard">📋</button>
+      </div>
+      <div class="prompt-entry-body">
+        <div class="prompt-section">
+          <div class="prompt-section-title">Prompt</div>
+          <div class="prompt-section-content">${escapeHtml(p.prompt)}</div>
+        </div>
+        <div class="prompt-section">
+          <div class="prompt-section-title">Response</div>
+          <div class="prompt-section-content response-content">${escapeHtml(p.response)}</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Toggle prompt entry expanded state
+window.togglePromptEntry = function(idx) {
+  const entry = document.querySelector(`.prompt-entry[data-idx="${idx}"]`);
+  if (entry) {
+    entry.classList.toggle('expanded');
+  }
+};
+
+// Copy prompt entry to clipboard
+window.copyPromptEntry = function(idx) {
+  const log = promptLogs[idx];
+  if (!log) return;
+  
+  const text = `=== ${log.model_type.toUpperCase()} (${log.model_name}) ===
+
+--- PROMPT ---
+${log.prompt}
+
+--- RESPONSE ---
+${log.response}`;
+  
+  navigator.clipboard.writeText(text).then(() => {
+    // Show brief feedback
+    const btn = document.querySelector(`.prompt-entry[data-idx="${idx}"] .prompt-copy-btn`);
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => btn.textContent = original, 1000);
+    }
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+  });
+};
 
 function formatTime(timestamp) {
   const date = new Date(timestamp * 1000);
