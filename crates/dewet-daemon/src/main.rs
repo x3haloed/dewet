@@ -560,7 +560,7 @@ impl Default for OpticalAssets {
 /// ARIAOS assets - the companion's self-managed display
 #[derive(Clone)]
 struct AriaosAssets {
-    /// Current rendered ARIAOS image (1024x768)
+    /// Current rendered ARIAOS image from Godot
     current: image::RgbaImage,
     /// Historical approved snapshots (captured when Aria responds)
     approved_history: Vec<image::RgbaImage>,
@@ -568,8 +568,13 @@ struct AriaosAssets {
     max_history: usize,
 }
 
+/// Target dimensions for ARIAOS composite (matches main composite for efficient VLM processing)
+const ARIAOS_WIDTH: u32 = 2048;
+const ARIAOS_HEIGHT: u32 = 1280;
+
 impl Default for AriaosAssets {
     fn default() -> Self {
+        // Base ARIAOS from Godot is 1024x768, will be scaled up in composite
         let blank = ImageBuffer::from_pixel(1024, 768, Rgba([15, 20, 30, 255]));
         Self {
             current: blank,
@@ -589,22 +594,21 @@ impl AriaosAssets {
     }
     
     /// Render composite with current ARIAOS + history filmstrip
-    /// Layout: [CURRENT (large)] [PREV 1]
-    ///                           [PREV 2]
-    ///                           [PREV 3]
+    /// Output: 2048x1280 to match main composite (no VLM padding waste)
+    /// Layout: [CURRENT (large)]    [PREV 1]
+    ///                              [PREV 2]
+    ///                              [PREV 3]
+    ///                              [PREV 4]
     fn render_composite(&self) -> RgbaImage {
         use image::imageops::{resize, FilterType};
         
-        if self.approved_history.is_empty() {
-            // No history, just return current
-            return self.current.clone();
-        }
+        // Always render at full size for consistent VLM input
+        let total_width = ARIAOS_WIDTH;
+        let total_height = ARIAOS_HEIGHT;
         
         // Layout: current takes 75%, history filmstrip takes 25%
-        let total_width = 1536u32;  // Wider to accommodate history
-        let total_height = 768u32;
-        let current_width = (total_width * 3) / 4;  // 75%
-        let history_width = total_width - current_width;  // 25%
+        let current_width = (total_width * 3) / 4;  // 1536
+        let history_width = total_width - current_width;  // 512
         
         let mut canvas = ImageBuffer::from_pixel(total_width, total_height, Rgba([15, 20, 30, 255]));
         
@@ -616,11 +620,19 @@ impl AriaosAssets {
             }
         }
         
-        // Draw history filmstrip on the right
-        let hist_count = self.approved_history.len().min(3);
-        let hist_panel_height = total_height / 3;
+        // Draw "ARIAOS" label on current
+        Self::draw_label(&mut canvas, 8, 12, "ARIAOS");
         
-        for (i, hist_img) in self.approved_history.iter().take(3).enumerate() {
+        if self.approved_history.is_empty() {
+            // No history - draw placeholder text
+            Self::draw_label(&mut canvas, current_width + 8, 12, "NO HISTORY");
+            return canvas;
+        }
+        
+        // Draw history filmstrip on the right (4 panels at 320px each)
+        let hist_panel_height = total_height / 4;  // 320px per panel
+        
+        for (i, hist_img) in self.approved_history.iter().take(4).enumerate() {
             let y_offset = (i as u32) * hist_panel_height;
             let hist_scaled = resize(hist_img, history_width, hist_panel_height, FilterType::CatmullRom);
             
@@ -637,13 +649,10 @@ impl AriaosAssets {
         }
         
         // Fill remaining slots with placeholder
-        for i in hist_count..3 {
+        for i in self.approved_history.len()..4 {
             let y_offset = (i as u32) * hist_panel_height;
             Self::draw_label(&mut canvas, current_width + 4, y_offset + 12, "NO HIST");
         }
-        
-        // Draw "ARIAOS" label on current
-        Self::draw_label(&mut canvas, 8, 12, "ARIAOS");
         
         canvas
     }
