@@ -169,6 +169,9 @@ async fn perception_tick(
     }
     
     let frame = vision.capture_frame()?;
+    
+    // Capture raw desktop for history BEFORE compositing (history should show just desktop, not composite)
+    let desktop_for_history = frame.rgba();
 
     let optical = optical_assets.lock().await.clone();
     
@@ -299,8 +302,8 @@ async fn perception_tick(
             storage.record_chat(&assistant_packet).await?;
             buffer.record_chat(assistant_packet);
             
-            // Record this screenshot as an approved one for visual history
-            buffer.record_approved_screenshot(composite_image.clone());
+            // Record raw desktop screenshot for visual history (NOT the composite)
+            buffer.record_approved_screenshot(desktop_for_history.clone());
             
             // Record ARIAOS snapshot for history
             ariaos_assets.lock().await.record_approved();
