@@ -35,7 +35,13 @@ async fn main() -> Result<()> {
     info!("Starting Dewet daemon");
 
     let storage = Storage::connect(&config.storage).await?;
-    let llm_client = llm::create_client(&config.llm);
+    let llm_clients = llm::LlmClients::from_config(&config.llm);
+    info!(
+        vla_model = %llm_clients.vla_model,
+        arbiter_model = %llm_clients.arbiter_model,
+        response_model = %llm_clients.response_model,
+        "LLM clients initialized"
+    );
     let synth = tts::create_synthesizer(&config.tts);
 
     let character_specs =
@@ -47,9 +53,8 @@ async fn main() -> Result<()> {
 
     let mut director = Director::new(
         storage.clone(),
-        llm_client.clone(),
+        llm_clients,
         config.director.clone(),
-        config.llm.clone(),
         characters,
     );
 

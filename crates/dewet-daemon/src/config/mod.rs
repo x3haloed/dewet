@@ -229,24 +229,48 @@ impl Default for DirectorConfig {
     }
 }
 
+/// Configuration for a single model endpoint (provider + model name)
+#[derive(Debug, Clone, Deserialize)]
+pub struct ModelConfig {
+    pub provider: LlmProvider,
+    pub model: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct LlmConfig {
-    pub provider: LlmProvider,
-    pub decision_model: String,
-    pub response_model: String,
+    /// VLA (Vision-Language Analysis) - fast, cheap vision model for change detection
+    /// Runs most frequently, needs vision capability
+    pub vla: ModelConfig,
+    /// Arbiter - reasoning model for deciding who should speak
+    /// Text-only, benefits from strong logic/reasoning
+    pub arbiter: ModelConfig,
+    /// Response - creative writing model for generating character dialogue
+    /// Benefits from strong conversational/creative writing ability
+    pub response: ModelConfig,
+    /// Optional audit model for reviewing responses
     #[serde(default)]
-    pub audit_model: Option<String>,
+    pub audit: Option<ModelConfig>,
 }
 
 impl Default for LlmConfig {
     fn default() -> Self {
+        let default_provider = LlmProvider::LmStudio {
+            endpoint: "http://127.0.0.1:1234".into(),
+        };
         Self {
-            provider: LlmProvider::LmStudio {
-                endpoint: "http://127.0.0.1:1234".into(),
+            vla: ModelConfig {
+                provider: default_provider.clone(),
+                model: "qwen2.5-vl-7b-instruct".into(),
             },
-            decision_model: "qwen2.5-vl-7b-instruct".into(),
-            response_model: "qwen2.5-7b-instruct".into(),
-            audit_model: None,
+            arbiter: ModelConfig {
+                provider: default_provider.clone(),
+                model: "qwen2.5-7b-instruct".into(),
+            },
+            response: ModelConfig {
+                provider: default_provider,
+                model: "qwen2.5-7b-instruct".into(),
+            },
+            audit: None,
         }
     }
 }

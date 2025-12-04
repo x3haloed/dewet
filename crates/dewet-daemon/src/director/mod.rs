@@ -13,8 +13,8 @@ use tracing::{debug, info, warn};
 use crate::{
     bridge::ChatPacket,
     character::{CharacterSpec, LoadedCharacter},
-    config::{DirectorConfig, LlmConfig},
-    llm::SharedLlm,
+    config::DirectorConfig,
+    llm::LlmClients,
     observation::Observation,
     storage::{Storage, StoredDecision},
 };
@@ -45,9 +45,8 @@ impl CompanionEligibility {
 
 pub struct Director {
     storage: Storage,
-    llm: SharedLlm,
+    clients: LlmClients,
     config: DirectorConfig,
-    models: ModelCatalog,
     characters: Vec<LoadedCharacter>,
     last_decision: Instant,
 }
@@ -55,16 +54,14 @@ pub struct Director {
 impl Director {
     pub fn new(
         storage: Storage,
-        llm: SharedLlm,
+        clients: LlmClients,
         director_config: DirectorConfig,
-        llm_config: LlmConfig,
         characters: Vec<LoadedCharacter>,
     ) -> Self {
         Self {
             storage,
-            llm,
+            clients,
             config: director_config,
-            models: ModelCatalog::from(llm_config),
             characters,
             last_decision: Instant::now()
                 .checked_sub(Duration::from_secs(3600))
@@ -161,14 +158,15 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
         });
 
         let response = self
-            .llm
-            .complete_vision_json(&self.models.decision, prompt, images, schema)
+            .clients
+            .vla
+            .complete_vision_json(&self.clients.vla_model, prompt, images, schema)
             .await?;
 
         let response_str = serde_json::to_string_pretty(&response).unwrap_or_default();
         let prompt_log = PromptLog {
             model_type: "vla".to_string(),
-            model_name: self.models.decision.clone(),
+            model_name: self.clients.vla_model.clone(),
             prompt: prompt.to_string(),
             response: response_str,
         };
@@ -349,15 +347,28 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
         // STEP 3: Arbiter - given ALLOW companions, who (if anyone) should speak?
         let arbiter_prompt = self.build_arbiter_prompt(observation, &vla, &allowed_companions, user_unanswered);
         let schema = arbiter_schema();
-        let response = self
-            .llm
-            .complete_json(&self.models.decision, &arbiter_prompt, schema)
-            .await?;
+        
+        // Arbiter gets vision context too - helps make better decisions about what's on screen
+        let response = if let Some(composite) = &observation.composite {
+            let mut images = vec![encode_rgba_to_base64(composite)?];
+            if let Some(ariaos) = &observation.ariaos {
+                images.push(encode_rgba_to_base64(ariaos)?);
+            }
+            self.clients
+                .arbiter
+                .complete_vision_json(&self.clients.arbiter_model, &arbiter_prompt, images, schema)
+                .await?
+        } else {
+            self.clients
+                .arbiter
+                .complete_json(&self.clients.arbiter_model, &arbiter_prompt, schema)
+                .await?
+        };
 
         let arbiter_response_str = serde_json::to_string_pretty(&response).unwrap_or_default();
         prompt_logs.push(PromptLog {
             model_type: "arbiter".to_string(),
-            model_name: self.models.decision.clone(),
+            model_name: self.clients.arbiter_model.clone(),
             prompt: arbiter_prompt.clone(),
             response: arbiter_response_str,
         });
@@ -452,29 +463,32 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             if let Some(ariaos) = &observation.ariaos {
                 images.push(encode_rgba_to_base64(ariaos)?);
             }
-            self.llm
-                .complete_vision_text(&self.models.response, &response_prompt, images)
+            self.clients
+                .response
+                .complete_vision_text(&self.clients.response_model, &response_prompt, images)
                 .await?
         } else {
-            self.llm
-                .complete_text(&self.models.response, &response_prompt)
+            self.clients
+                .response
+                .complete_text(&self.clients.response_model, &response_prompt)
                 .await?
         };
 
         prompt_logs.push(PromptLog {
             model_type: "response".to_string(),
-            model_name: self.models.response.clone(),
+            model_name: self.clients.response_model.clone(),
             prompt: response_prompt,
             response: text.clone(),
         });
 
         // Optional audit
-        if let Some(audit_model) = &self.models.audit {
+        if let Some((audit_client, audit_model)) = &self.clients.audit {
             text = match self
                 .run_audit(
                     &self.characters[responder_index].spec,
                     &text,
                     observation,
+                    audit_client.as_ref(),
                     audit_model,
                 )
                 .await
@@ -515,6 +529,7 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
         spec: &CharacterSpec,
         text: &str,
         observation: &Observation,
+        client: &dyn crate::llm::LlmClient,
         model: &str,
     ) -> Result<String> {
         let schema = json!({
@@ -537,7 +552,7 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             summary = observation.screen_summary.notes,
             chat = format_chat(&observation.recent_chat)
         );
-        let result = self.llm.complete_json(model, &prompt, schema).await?;
+        let result = client.complete_json(model, &prompt, schema).await?;
         let audit: AuditResult = serde_json::from_value(result)?;
 
         match audit.status.as_str() {
@@ -603,10 +618,33 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             format!("**VLA: No significant change**\n{}", vla.description)
         };
 
+        // Image layout explanation (only if we have images)
+        let image_context = if observation.composite.is_some() {
+            let ariaos_note = if observation.ariaos.is_some() {
+                "\n\n**IMAGE 2 - ARIAOS**: The companion's personal dashboard showing their notes, focus tracking, and activity log."
+            } else {
+                ""
+            };
+            format!(
+                r#"# Visual Context
+**IMAGE 1 - COMPOSITE** layout:
+- DESKTOP (top-left): The user's current screen
+- PREV 1/2/3 (right side): Previous screenshots for temporal context
+- MEMORY/CHAT/STATUS panels: Optical memory visualization{ariaos}
+
+Use these images to understand what the user is doing and whether a companion comment would be welcome or intrusive.
+
+"#,
+                ariaos = ariaos_note
+            )
+        } else {
+            String::new()
+        };
+
         format!(
             r#"You are the Arbiter for Dewet companions. Your job: decide WHO (if anyone) should speak.
 
-# Context Analysis
+{image_context}# Context Analysis
 {vla}
 
 # Timing
@@ -638,6 +676,7 @@ You must choose ONE of:
 - Any response would feel repetitive or forced
 
 **Default to "none" unless there's a clear reason to speak.**"#,
+            image_context = image_context,
             vla = vla_summary,
             silence = silence_note,
             last_speaker = if user_unanswered { 
@@ -703,23 +742,6 @@ fn encode_rgba_to_base64(image: &RgbaImage) -> Result<String> {
     let mut cursor = Cursor::new(&mut buffer);
     DynamicImage::ImageRgba8(image.clone()).write_to(&mut cursor, ImageFormat::Png)?;
     Ok(BASE64.encode(buffer))
-}
-
-#[derive(Debug)]
-struct ModelCatalog {
-    decision: String,
-    response: String,
-    audit: Option<String>,
-}
-
-impl From<LlmConfig> for ModelCatalog {
-    fn from(config: LlmConfig) -> Self {
-        Self {
-            decision: config.decision_model,
-            response: config.response_model,
-            audit: config.audit_model,
-        }
-    }
 }
 
 fn arbiter_schema() -> Value {

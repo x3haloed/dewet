@@ -22,9 +22,23 @@ min_decision_interval_ms = 2000
 cooldown_after_speak_ms = 30000
 
 [llm]
+# VLA (Vision-Language Analysis) - fast, cheap vision model for change detection
+# Runs most frequently (~every 8 seconds), needs vision capability
+[llm.vla]
 provider = { type = "lmstudio", endpoint = "http://127.0.0.1:1234" }
-decision_model = "qwen2.5-vl-7b-instruct"
-response_model = "qwen2.5-7b-instruct"
+model = "qwen2.5-vl-7b-instruct"
+
+# Arbiter - reasoning model for deciding who should speak
+# Needs vision to see screen context, benefits from strong reasoning
+[llm.arbiter]
+provider = { type = "lmstudio", endpoint = "http://127.0.0.1:1234" }
+model = "qwen2.5-7b-instruct"
+
+# Response - creative writing model for generating character dialogue
+# Benefits from strong conversational/creative writing ability
+[llm.response]
+provider = { type = "lmstudio", endpoint = "http://127.0.0.1:1234" }
+model = "qwen2.5-7b-instruct"
 
 [tts]
 provider = "null"
