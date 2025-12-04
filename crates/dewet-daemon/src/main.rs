@@ -203,27 +203,7 @@ async fn perception_tick(
         timestamp: Utc::now().timestamp(),
     })?;
 
-    let (decision, vision_analysis) = director.evaluate(&observation).await?;
-
-    // Broadcast vision analysis if available
-    if let Some(ref analysis) = vision_analysis {
-        bridge.broadcast(DaemonMessage::VisionAnalysis {
-            activity: analysis.activity.clone(),
-            warrants_response: analysis.warrants_response,
-            response_trigger: analysis.response_trigger.clone(),
-            companion_interest: analysis.companion_interest.clone(),
-            timestamp: Utc::now().timestamp(),
-        })?;
-
-        log_event(
-            bridge,
-            "debug",
-            format!(
-                "VLM: {} (warrants_response={})",
-                analysis.activity, analysis.warrants_response
-            ),
-        );
-    }
+    let decision = director.evaluate(&observation).await?;
 
     match decision {
         Decision::Pass => {}

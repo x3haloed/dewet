@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use image::{DynamicImage, ImageFormat, RgbaImage};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use tracing::{info, warn};
@@ -52,117 +52,15 @@ impl Director {
         &self.characters
     }
 
-    /// Analyze the composite image using VLM to understand current context
-    pub async fn analyze_vision(&self, observation: &Observation) -> Result<VisionAnalysis> {
-        let composite = observation
-            .composite
-            .as_ref()
-            .ok_or_else(|| anyhow!("No composite image available"))?;
-
-        // Build list of images: composite first, then ARIAOS if available
-        let mut images = vec![encode_rgba_to_base64(composite)?];
-        let has_ariaos = observation.ariaos.is_some();
-        if let Some(ariaos) = &observation.ariaos {
-            images.push(encode_rgba_to_base64(ariaos)?);
-        }
-
-        let prompt = if has_ariaos {
-            r#"You are observing Dewet's context through TWO images:
-
-**IMAGE 1 - USER'S WORLD** (4 quadrants):
-- TOP-LEFT (DESKTOP): The user's current screen.
-- TOP-RIGHT (MEMORY MAP): Spatial visualization of recent topics.
-- BOTTOM-LEFT (RECENT CHAT): The conversation history.
-- BOTTOM-RIGHT (COMPANIONS): Active AI companions.
-
-**IMAGE 2 - ARIAOS** (Companion's self-managed display):
-This is YOUR personal dashboard showing your notes, focus tracking, and activity log.
-Review what you've noted and consider it in your analysis.
-
-Analyze this context and provide:
-1. What is the user currently doing? (Be specific: app, task, content)
-2. Does this warrant any companion response?
-3. If so, what triggered this (user question, interesting activity, long silence)?
-4. Rate each companion's likely interest in the current activity (0.0-1.0).
-
-Be concise but specific."#.to_string()
-        } else {
-            r#"You are observing Dewet's context through 4 quadrants:
-
-**TOP-LEFT (DESKTOP)**: The user's current screen.
-**TOP-RIGHT (MEMORY MAP)**: Spatial visualization of recent topics and their relationships.
-**BOTTOM-LEFT (RECENT CHAT)**: The conversation history.
-**BOTTOM-RIGHT (COMPANIONS)**: Active AI companions with their current moods.
-
-Analyze this context and provide:
-1. What is the user currently doing? (Be specific: app, task, content)
-2. Does this warrant any companion response?
-3. If so, what triggered this (user question, interesting activity, long silence)?
-4. Rate each companion's likely interest in the current activity (0.0-1.0).
-
-Be concise but specific."#.to_string()
-        };
-
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "activity": {
-                    "type": "string",
-                    "description": "What the user is currently doing"
-                },
-                "warrants_response": {
-                    "type": "boolean",
-                    "description": "Whether a companion should respond"
-                },
-                "response_trigger": {
-                    "type": "string",
-                    "description": "What triggered the potential response, or empty string if none"
-                },
-                "companion_interest": {
-                    "type": "object",
-                    "description": "Interest level per companion (0.0-1.0)",
-                    "additionalProperties": { "type": "number" }
-                }
-            },
-            "required": ["activity", "warrants_response", "response_trigger", "companion_interest"]
-        });
-
-        let response = self
-            .llm
-            .complete_vision_json(&self.models.decision, &prompt, images, schema)
-            .await?;
-
-        let analysis: VisionAnalysis = serde_json::from_value(response)?;
-        info!(activity = %analysis.activity, warrants = analysis.warrants_response, "VLM analysis complete");
-
-        Ok(analysis)
-    }
-
-    pub async fn evaluate(
-        &mut self,
-        observation: &Observation,
-    ) -> Result<(Decision, Option<VisionAnalysis>)> {
+    pub async fn evaluate(&mut self, observation: &Observation) -> Result<Decision> {
         if self.last_decision.elapsed() < self.config.min_decision_interval() {
-            return Ok((Decision::Pass, None));
+            return Ok(Decision::Pass);
         }
         self.last_decision = Instant::now();
 
-        // Try vision analysis if composite is available
-        let vision_analysis = if observation.composite.is_some() {
-            match self.analyze_vision(observation).await {
-                Ok(analysis) => Some(analysis),
-                Err(err) => {
-                    warn!(?err, "Vision analysis failed, falling back to text-only");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // Build arbiter prompt, enriched with vision analysis if available
+        // Build arbiter prompt with raw data only - no pre-baked VLM analysis
         let schema = arbiter_schema();
-        let prompt = self.build_arbiter_prompt_with_vision(observation, vision_analysis.as_ref());
+        let prompt = self.build_arbiter_prompt(observation);
         let response = self
             .llm
             .complete_json(&self.models.decision, &prompt, schema)
@@ -187,14 +85,14 @@ Be concise but specific."#.to_string()
             .await?;
 
         if !decision.should_respond {
-            return Ok((Decision::Pass, vision_analysis));
+            return Ok(Decision::Pass);
         }
 
         let responder_id = match &decision.responder_id {
             Some(id) if !id.is_empty() => id.clone(),
             _ => {
                 info!("Arbiter said respond but no responder_id given");
-                return Ok((Decision::Pass, vision_analysis));
+                return Ok(Decision::Pass);
             }
         };
 
@@ -205,7 +103,7 @@ Be concise but specific."#.to_string()
             .position(|c| c.spec.id == responder_id)
         else {
             warn!(responder_id = %responder_id, available = ?available_ids, "Responder not found in character list");
-            return Ok((Decision::Pass, vision_analysis));
+            return Ok(Decision::Pass);
         };
 
         {
@@ -215,15 +113,14 @@ Be concise but specific."#.to_string()
                 .is_on_cooldown(self.config.cooldown_after_speak())
             {
                 info!(responder_id = %responder_id, "Character on cooldown, skipping");
-                return Ok((Decision::Pass, vision_analysis));
+                return Ok(Decision::Pass);
             }
         }
 
         info!(responder_id = %responder_id, "Generating response...");
 
-        // Don't pass vision_analysis to response prompt - let the model see the images directly
         let response_prompt =
-            Self::build_response_prompt(&self.characters[responder_index].spec, observation, None);
+            Self::build_response_prompt(&self.characters[responder_index].spec, observation);
         
         // Use vision model if composite image is available
         let mut text = if let Some(composite) = &observation.composite {
@@ -254,7 +151,7 @@ Be concise but specific."#.to_string()
                 Ok(validated) => validated,
                 Err(err) => {
                     warn!(?err, "Audit rejected response");
-                    return Ok((Decision::Pass, vision_analysis));
+                    return Ok(Decision::Pass);
                 }
             };
         }
@@ -263,15 +160,12 @@ Be concise but specific."#.to_string()
             character.state.update_last_spoke();
         }
 
-        Ok((
-            Decision::Speak {
-                character_id: responder_id,
-                text,
-                urgency: decision.urgency,
-                suggested_mood: decision.suggested_mood.clone(),
-            },
-            vision_analysis,
-        ))
+        Ok(Decision::Speak {
+            character_id: responder_id,
+            text,
+            urgency: decision.urgency,
+            suggested_mood: decision.suggested_mood.clone(),
+        })
     }
 
     async fn run_audit(
@@ -314,11 +208,7 @@ Be concise but specific."#.to_string()
         }
     }
 
-    fn build_arbiter_prompt_with_vision(
-        &self,
-        observation: &Observation,
-        vision: Option<&VisionAnalysis>,
-    ) -> String {
+    fn build_arbiter_prompt(&self, observation: &Observation) -> String {
         let chat = format_chat(&observation.recent_chat);
         let character_section = self
             .characters
@@ -341,47 +231,48 @@ Be concise but specific."#.to_string()
             .collect::<Vec<_>>()
             .join("\n");
 
-        let screen_context = if let Some(v) = vision {
-            format!(
-                "## VLM Analysis\n**Activity**: {}\n**Warrants Response**: {}\n**Trigger**: {}\n**Companion Interest**: {}\n\n## Raw Screen Data\n{}",
-                v.activity,
-                v.warrants_response,
-                v.response_trigger.as_deref().unwrap_or("none"),
-                serde_json::to_string_pretty(&v.companion_interest).unwrap_or_default(),
-                observation.screen_summary.notes
-            )
+        // Format time since user message
+        let silence_note = if observation.seconds_since_user_message == u64::MAX {
+            "User has not spoken yet.".to_string()
+        } else if observation.seconds_since_user_message < 5 {
+            "User just spoke.".to_string()
         } else {
-            format!("## Screen\n{}", observation.screen_summary.notes)
+            format!("{}s since user last spoke.", observation.seconds_since_user_message)
         };
+
+        // Check if last message in chat is from user (unanswered)
+        let last_speaker = observation.recent_chat.last().map(|p| p.sender.as_str());
+        let unanswered_user = last_speaker == Some("user");
 
         format!(
             "You orchestrate Dewet companions. Decide whether anyone should speak.\n\n\
-            {screen_context}\n\n\
+            # Understanding the Composite Image\n\
+            The image shows the user's context in multiple panels:\n\
+            - **DESKTOP**: Current screen capture\n\
+            - **PREV 1/2/3** (if present): Historical screenshots from when companions last responded - compare these to DESKTOP to see what changed\n\
+            - **RECENT CHAT**: Conversation history\n\
+            - **MEMORY/STATUS**: Context visualization\n\n\
+            # Screen Data\n{screen}\n\
+            **Timing**: {silence}\n\
+            **Last speaker**: {last_speaker}\n\n\
             # Recent Chat\n{chat}\n\n\
             # Companions\n{companions}\n\n\
-            Consider social appropriateness, silence preference, and user focus.\n\n\
-            ## Decision Criteria\n\
-            - **Silence is golden.** Most of the time, don't respond.\n\
-            - **Never be annoying.** Companions should feel like friends, not pop-up ads.\n\
-            - **Respect focus.** If the user is in deep work, stay quiet unless addressed.\n\
-            - **Be contextual.** Generic comments are worse than silence.",
-            screen_context = screen_context,
+            ## When to Respond (ONLY if one of these is true)\n\
+            1. **Unanswered user message**: The user said something that appears to be addressing a companion (question, greeting, request) and no companion has responded yet.\n\
+            2. **Significant context change**: Comparing DESKTOP to the PREV panels shows something meaningfully different happened (new app, new content, completed task, error appeared) that a companion would naturally comment on.\n\n\
+            ## When NOT to Respond\n\
+            - Nothing significant changed since the last PREV screenshot\n\
+            - The last chat message was from the same companion (don't pile on)\n\
+            **Default to should_respond: false** unless criterion 1 or 2 clearly applies.",
+            screen = observation.screen_summary.notes,
+            silence = silence_note,
+            last_speaker = if unanswered_user { "user (UNANSWERED)" } else { last_speaker.unwrap_or("none") },
             chat = chat,
             companions = character_section
         )
     }
 
-    fn build_response_prompt(spec: &CharacterSpec, observation: &Observation, vision: Option<&VisionAnalysis>) -> String {
-        let screen_context = if let Some(v) = vision {
-            format!(
-                "**What you see**: {}\n**Why you're speaking**: {}",
-                v.activity,
-                v.response_trigger.as_deref().unwrap_or("general engagement")
-            )
-        } else {
-            observation.screen_summary.notes.clone()
-        };
-        
+    fn build_response_prompt(spec: &CharacterSpec, observation: &Observation) -> String {
         let ariaos_note = if observation.ariaos.is_some() {
             "\n\n# Your Dashboard (ARIAOS)\n\
             The second image shows your personal ARIAOS display - your notes, focus tracking, \
@@ -403,7 +294,7 @@ Be concise but specific."#.to_string()
             description = spec.description,
             personality = spec.personality,
             scenario = spec.scenario,
-            screen = screen_context,
+            screen = observation.screen_summary.notes,
             ariaos = ariaos_note,
             chat = format_chat(&observation.recent_chat),
         )
@@ -495,20 +386,6 @@ pub enum Decision {
         urgency: f32,
         suggested_mood: Option<String>,
     },
-}
-
-/// Analysis result from VLM about the current screen context
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VisionAnalysis {
-    /// What the user is currently doing
-    pub activity: String,
-    /// Whether the current context warrants a response
-    pub warrants_response: bool,
-    /// What triggered the potential response (empty string if none)
-    #[serde(deserialize_with = "deserialize_optional_string")]
-    pub response_trigger: Option<String>,
-    /// Interest level per companion (character_id -> 0.0-1.0)
-    pub companion_interest: Value,
 }
 
 fn deserialize_optional_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
