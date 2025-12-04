@@ -49,16 +49,6 @@ function handleWireMessage(msg) {
     case 'speak':
       handleDaemonEvent({ type: 'speak', character_id: msg.character_id, text: msg.text });
       break;
-    case 'vision_analysis':
-      handleDaemonEvent({
-        type: 'vision_analysis',
-        activity: msg.activity,
-        warrants_response: msg.warrants_response,
-        response_trigger: msg.response_trigger,
-        companion_interest: msg.companion_interest,
-        timestamp: msg.timestamp
-      });
-      break;
     case 'decision_update':
       if (msg.decision?.composite) {
         handleDaemonEvent({
@@ -138,7 +128,6 @@ const screenPreview = document.getElementById('screen-preview');
 const ariaosPreview = document.getElementById('ariaos-preview');
 const activeWindow = document.getElementById('active-window');
 const activeApp = document.getElementById('active-app');
-const visionAnalysis = document.getElementById('vision-analysis');
 
 const characterSelect = document.getElementById('character-select');
 const forceSpeakText = document.getElementById('force-speak-text');
@@ -151,7 +140,6 @@ const reconnectBtn = document.getElementById('reconnect-btn');
 let connected = false;
 let decisions = [];
 let logs = [];
-let visionHistory = [];
 
 // Initialize
 async function init() {
@@ -243,10 +231,6 @@ function handleDaemonEvent(event) {
       addDecision(event);
       break;
       
-    case 'vision_analysis':
-      updateVisionAnalysis(event);
-      break;
-      
     case 'log':
       addLog(event);
       break;
@@ -335,40 +319,6 @@ function updateAriaosPreview(data) {
   if (data.image_base64) {
     ariaosPreview.innerHTML = `<img src="data:image/png;base64,${data.image_base64}" alt="ARIAOS">`;
   }
-}
-
-function updateVisionAnalysis(data) {
-  visionHistory.unshift(data);
-  if (visionHistory.length > 20) visionHistory.pop();
-  
-  renderVisionAnalysis();
-}
-
-function renderVisionAnalysis() {
-  if (visionHistory.length === 0) {
-    visionAnalysis.innerHTML = '<p class="placeholder">Waiting for VLM analysis...</p>';
-    return;
-  }
-  
-  visionAnalysis.innerHTML = visionHistory.map(v => `
-    <div class="vision-entry ${v.warrants_response ? 'active' : 'passive'}">
-      <div class="timestamp">${formatTime(v.timestamp)}</div>
-      <div class="activity">${escapeHtml(v.activity)}</div>
-      <div class="meta">
-        <span class="warrants ${v.warrants_response ? 'yes' : 'no'}">
-          ${v.warrants_response ? '🟢 Response warranted' : '⚪ Passive'}
-        </span>
-        ${v.response_trigger ? `<span class="trigger">Trigger: ${escapeHtml(v.response_trigger)}</span>` : ''}
-      </div>
-      ${Object.keys(v.companion_interest || {}).length > 0 ? `
-        <div class="interests">
-          ${Object.entries(v.companion_interest).map(([id, score]) => 
-            `<span class="interest-badge" style="opacity: ${0.3 + score * 0.7}">${id}: ${(score * 100).toFixed(0)}%</span>`
-          ).join('')}
-        </div>
-      ` : ''}
-    </div>
-  `).join('');
 }
 
 function formatTime(timestamp) {

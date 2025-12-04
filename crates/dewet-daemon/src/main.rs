@@ -206,11 +206,25 @@ async fn perception_tick(
     let decision = director.evaluate(&observation).await?;
 
     match decision {
-        Decision::Pass => {}
+        Decision::Pass { reasoning, urgency } => {
+            // Broadcast pass decision for debug UI
+            bridge.broadcast(DaemonMessage::DecisionUpdate {
+                decision: json!({
+                    "should_respond": false,
+                    "responder_id": null,
+                    "reasoning": reasoning,
+                    "urgency": urgency
+                }),
+                observation: json!({
+                    "screen_summary": observation.screen_summary.notes
+                }),
+            })?;
+        }
         Decision::Speak {
             character_id,
             text,
             urgency,
+            reasoning,
             suggested_mood,
         } => {
             // Parse ARIAOS DSL commands from the response
@@ -249,7 +263,7 @@ async fn perception_tick(
                 decision: json!({
                     "should_respond": true,
                     "responder_id": character_id,
-                    "reasoning": "LLM approved",
+                    "reasoning": reasoning,
                     "urgency": urgency,
                     "suggested_mood": suggested_mood
                 }),

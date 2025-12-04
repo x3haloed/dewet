@@ -54,7 +54,10 @@ impl Director {
 
     pub async fn evaluate(&mut self, observation: &Observation) -> Result<Decision> {
         if self.last_decision.elapsed() < self.config.min_decision_interval() {
-            return Ok(Decision::Pass);
+            return Ok(Decision::Pass {
+                reasoning: "Rate limited".to_string(),
+                urgency: 0.0,
+            });
         }
         self.last_decision = Instant::now();
 
@@ -65,34 +68,40 @@ impl Director {
             .llm
             .complete_json(&self.models.decision, &prompt, schema)
             .await?;
-        let decision: ArbiterDecision = serde_json::from_value(response)?;
+        let arbiter: ArbiterDecision = serde_json::from_value(response)?;
 
         info!(
-            should_respond = decision.should_respond,
-            responder = ?decision.responder_id,
-            urgency = decision.urgency,
-            reasoning = %decision.reasoning,
+            should_respond = arbiter.should_respond,
+            responder = ?arbiter.responder_id,
+            urgency = arbiter.urgency,
+            reasoning = %arbiter.reasoning,
             "Arbiter decision"
         );
 
         self.storage
             .record_decision(&StoredDecision::now(
-                decision.should_respond,
-                decision.responder_id.clone(),
-                decision.reasoning.clone(),
-                decision.urgency,
+                arbiter.should_respond,
+                arbiter.responder_id.clone(),
+                arbiter.reasoning.clone(),
+                arbiter.urgency,
             ))
             .await?;
 
-        if !decision.should_respond {
-            return Ok(Decision::Pass);
+        if !arbiter.should_respond {
+            return Ok(Decision::Pass {
+                reasoning: arbiter.reasoning,
+                urgency: arbiter.urgency,
+            });
         }
 
-        let responder_id = match &decision.responder_id {
+        let responder_id = match &arbiter.responder_id {
             Some(id) if !id.is_empty() => id.clone(),
             _ => {
                 info!("Arbiter said respond but no responder_id given");
-                return Ok(Decision::Pass);
+                return Ok(Decision::Pass {
+                    reasoning: format!("{} (no responder_id)", arbiter.reasoning),
+                    urgency: arbiter.urgency,
+                });
             }
         };
 
@@ -103,7 +112,10 @@ impl Director {
             .position(|c| c.spec.id == responder_id)
         else {
             warn!(responder_id = %responder_id, available = ?available_ids, "Responder not found in character list");
-            return Ok(Decision::Pass);
+            return Ok(Decision::Pass {
+                reasoning: format!("{} (responder '{}' not found)", arbiter.reasoning, responder_id),
+                urgency: arbiter.urgency,
+            });
         };
 
         {
@@ -113,7 +125,10 @@ impl Director {
                 .is_on_cooldown(self.config.cooldown_after_speak())
             {
                 info!(responder_id = %responder_id, "Character on cooldown, skipping");
-                return Ok(Decision::Pass);
+                return Ok(Decision::Pass {
+                    reasoning: format!("{} (on cooldown)", arbiter.reasoning),
+                    urgency: arbiter.urgency,
+                });
             }
         }
 
@@ -151,7 +166,10 @@ impl Director {
                 Ok(validated) => validated,
                 Err(err) => {
                     warn!(?err, "Audit rejected response");
-                    return Ok(Decision::Pass);
+                    return Ok(Decision::Pass {
+                        reasoning: format!("{} (audit rejected: {})", arbiter.reasoning, err),
+                        urgency: arbiter.urgency,
+                    });
                 }
             };
         }
@@ -162,9 +180,10 @@ impl Director {
 
         Ok(Decision::Speak {
             character_id: responder_id,
+            reasoning: arbiter.reasoning,
             text,
-            urgency: decision.urgency,
-            suggested_mood: decision.suggested_mood.clone(),
+            urgency: arbiter.urgency,
+            suggested_mood: arbiter.suggested_mood.clone(),
         })
     }
 
@@ -379,11 +398,15 @@ struct AuditResult {
 }
 
 pub enum Decision {
-    Pass,
+    Pass {
+        reasoning: String,
+        urgency: f32,
+    },
     Speak {
         character_id: String,
         text: String,
         urgency: f32,
+        reasoning: String,
         suggested_mood: Option<String>,
     },
 }
