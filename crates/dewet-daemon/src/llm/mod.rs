@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use lmstudio::LmStudioClient;
@@ -13,6 +14,83 @@ pub use openrouter::OpenRouterClient;
 use crate::config::{LlmConfig, LlmProvider, ModelConfig};
 
 pub type SharedLlm = Arc<dyn LlmClient>;
+
+/// A single message in a chat conversation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: ChatRole,
+    pub content: ChatContent,
+}
+
+/// The role of a message sender
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatRole {
+    System,
+    User,
+    Assistant,
+}
+
+/// Content of a chat message - either plain text or multimodal
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ChatContent {
+    Text(String),
+    Multimodal(Vec<ContentPart>),
+}
+
+/// A part of multimodal content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrl },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageUrl {
+    pub url: String,
+}
+
+impl ChatMessage {
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::System,
+            content: ChatContent::Text(content.into()),
+        }
+    }
+
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::User,
+            content: ChatContent::Text(content.into()),
+        }
+    }
+
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::Assistant,
+            content: ChatContent::Text(content.into()),
+        }
+    }
+
+    pub fn user_with_images(text: impl Into<String>, images_base64: Vec<String>) -> Self {
+        let mut parts: Vec<ContentPart> = images_base64
+            .into_iter()
+            .map(|img| ContentPart::ImageUrl {
+                image_url: ImageUrl {
+                    url: format!("data:image/png;base64,{}", img),
+                },
+            })
+            .collect();
+        parts.push(ContentPart::Text { text: text.into() });
+
+        Self {
+            role: ChatRole::User,
+            content: ChatContent::Multimodal(parts),
+        }
+    }
+}
 
 #[async_trait]
 pub trait LlmClient: Send + Sync {
@@ -34,6 +112,17 @@ pub trait LlmClient: Send + Sync {
         images_base64: Vec<String>,
         schema: Value,
     ) -> Result<Value>;
+
+    /// Complete a chat conversation with proper message structure.
+    /// Use this for actual conversational scenarios where turn-taking matters.
+    async fn complete_chat(&self, model: &str, messages: Vec<ChatMessage>) -> Result<String>;
+
+    /// Complete a chat conversation with images attached to the final user message.
+    async fn complete_vision_chat(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+    ) -> Result<String>;
 }
 
 /// Collection of LLM clients for different roles

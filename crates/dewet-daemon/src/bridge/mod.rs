@@ -149,12 +149,13 @@ async fn handle_connection(
     let (mut writer, mut reader) = ws_stream.split();
     let mut outgoing_rx = outgoing_tx.subscribe();
 
-    // send hello
+    // Send hello ONLY to this new connection, not broadcast to all clients
     let hello = DaemonMessage::Hello {
         version: env!("CARGO_PKG_VERSION").into(),
         capabilities: vec!["bridge".into(), "chat".into(), "optical-memory".into()],
     };
-    let _ = outgoing_tx.send(hello);
+    let hello_payload = serde_json::to_string(&hello)?;
+    writer.send(Message::Text(hello_payload)).await?;
 
     let writer_task = tokio::spawn(async move {
         while let Ok(msg) = outgoing_rx.recv().await {

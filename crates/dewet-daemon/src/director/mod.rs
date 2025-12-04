@@ -14,7 +14,7 @@ use crate::{
     bridge::ChatPacket,
     character::{CharacterSpec, LoadedCharacter},
     config::DirectorConfig,
-    llm::LlmClients,
+    llm::{ChatMessage, LlmClients},
     observation::Observation,
     storage::{Storage, StoredDecision},
 };
@@ -452,32 +452,42 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             });
         }
 
-        // STEP 4: Generate response
+        // STEP 4: Generate response using proper chat message structure
         info!(responder_id = %responder_id, "Generating response...");
 
-        let response_prompt =
-            Self::build_response_prompt(&self.characters[responder_index].spec, observation);
-
-        let mut text = if let Some(composite) = &observation.composite {
-            let mut images = vec![encode_rgba_to_base64(composite)?];
+        // Build images list for the message
+        let images = if let Some(composite) = &observation.composite {
+            let mut imgs = vec![encode_rgba_to_base64(composite)?];
             if let Some(ariaos) = &observation.ariaos {
-                images.push(encode_rgba_to_base64(ariaos)?);
+                imgs.push(encode_rgba_to_base64(ariaos)?);
             }
-            self.clients
-                .response
-                .complete_vision_text(&self.clients.response_model, &response_prompt, images)
-                .await?
+            imgs
         } else {
-            self.clients
-                .response
-                .complete_text(&self.clients.response_model, &response_prompt)
-                .await?
+            vec![]
         };
+
+        // Build proper chat messages with turn structure
+        let response_messages = Self::build_response_messages(
+            &self.characters[responder_index].spec,
+            observation,
+            images,
+        );
+
+        // Serialize messages for logging (before consuming them)
+        let response_prompt_json = serde_json::to_string_pretty(&response_messages)
+            .unwrap_or_else(|_| "(failed to serialize)".to_string());
+
+        // Use chat completion for proper turn-taking
+        let mut text = self
+            .clients
+            .response
+            .complete_vision_chat(&self.clients.response_model, response_messages)
+            .await?;
 
         prompt_logs.push(PromptLog {
             model_type: "response".to_string(),
             model_name: self.clients.response_model.clone(),
-            prompt: response_prompt,
+            prompt: response_prompt_json,
             response: text.clone(),
         });
 
@@ -689,32 +699,71 @@ You must choose ONE of:
         )
     }
 
-    fn build_response_prompt(spec: &CharacterSpec, observation: &Observation) -> String {
-        let ariaos_note = if observation.ariaos.is_some() {
-            "\n\n# Your Dashboard (ARIAOS)\n\
-            The second image shows your personal ARIAOS display - your notes, focus tracking, \
-            and activity log. Use this context to inform your response, but don't explicitly \
-            mention ARIAOS to the user."
-        } else {
-            ""
-        };
-        
-        format!(
-            "You are {name} ({id}). {description}\n\n\
-            Personality: {personality}\nScenario: {scenario}\n\
-            Stay in voice and respond naturally.\n\n\
-            # What's Happening\n{screen}{ariaos}\n\n\
-            # Recent Chat\n{chat}\n\n\
-            Respond conversationally based on what you see and the conversation so far.",
+    /// Build response prompt as proper chat messages with turn structure.
+    /// This helps the model distinguish its own voice from the user's.
+    fn build_response_messages(
+        spec: &CharacterSpec,
+        observation: &Observation,
+        images_base64: Vec<String>,
+    ) -> Vec<ChatMessage> {
+        let mut messages = Vec::new();
+
+        // System message: character's system_prompt plus their card details
+        let system_content = format!(
+            "{system_prompt}\n\n\
+            Character: {name} ({id})\n\
+            Description: {description}\n\
+            Personality: {personality}\n\
+            Scenario: {scenario}",
+            system_prompt = spec.system_prompt,
             name = spec.name,
             id = spec.id,
             description = spec.description,
             personality = spec.personality,
             scenario = spec.scenario,
+        );
+        messages.push(ChatMessage::system(system_content));
+
+        // Convert chat history into proper user/assistant turns
+        for packet in &observation.recent_chat {
+            let sender_lower = packet.sender.to_lowercase();
+            if sender_lower == "user" {
+                // User's messages are user turns
+                messages.push(ChatMessage::user(&packet.content));
+            } else if sender_lower == spec.id.to_lowercase() || sender_lower == spec.name.to_lowercase() {
+                // This character's previous messages become assistant turns
+                messages.push(ChatMessage::assistant(&packet.content));
+            } else {
+                // Other characters' messages shown as user turns with speaker prefix
+                // so the model sees the full conversation but knows it's not its own voice
+                let prefixed = format!("[{}]: {}", packet.sender, packet.content);
+                messages.push(ChatMessage::user(prefixed));
+            }
+        }
+
+        // Final user message with current context (what's on screen)
+        let ariaos_note = if observation.ariaos.is_some() {
+            "\n\nThe second image shows your personal dashboard - your notes, focus tracking, \
+            and activity log. Use this to inform your response, but don't mention it explicitly."
+        } else {
+            ""
+        };
+
+        let context_content = format!(
+            "[Current context: {screen}{ariaos}]\n\n\
+            Respond conversationally based on what you see.",
             screen = observation.screen_summary.notes,
             ariaos = ariaos_note,
-            chat = format_chat(&observation.recent_chat),
-        )
+        );
+
+        // If we have images, attach them to the final context message
+        if !images_base64.is_empty() {
+            messages.push(ChatMessage::user_with_images(context_content, images_base64));
+        } else {
+            messages.push(ChatMessage::user(context_content));
+        }
+
+        messages
     }
 }
 

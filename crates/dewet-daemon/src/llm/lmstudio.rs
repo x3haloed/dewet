@@ -4,7 +4,7 @@ use serde_json::Value;
 use serde_json::json;
 use tracing;
 
-use super::LlmClient;
+use super::{ChatMessage, LlmClient};
 
 pub struct LmStudioClient {
     http: Client,
@@ -150,6 +150,43 @@ impl LlmClient for LmStudioClient {
         let resp = self.send(body).await?;
         let text = extract_text(&resp)?;
         Ok(serde_json::from_str(&text)?)
+    }
+
+    async fn complete_chat(&self, model: &str, messages: Vec<ChatMessage>) -> Result<String> {
+        let messages_json: Vec<Value> = messages
+            .into_iter()
+            .map(|msg| serde_json::to_value(msg).unwrap())
+            .collect();
+
+        let body = json!({
+            "model": model,
+            "messages": messages_json,
+            "stream": false
+        });
+
+        let resp = self.send(body).await?;
+        extract_text(&resp)
+    }
+
+    async fn complete_vision_chat(
+        &self,
+        model: &str,
+        messages: Vec<ChatMessage>,
+    ) -> Result<String> {
+        // Vision chat uses the same format - images are embedded in ChatContent::Multimodal
+        let messages_json: Vec<Value> = messages
+            .into_iter()
+            .map(|msg| serde_json::to_value(msg).unwrap())
+            .collect();
+
+        let body = json!({
+            "model": model,
+            "messages": messages_json,
+            "stream": false
+        });
+
+        let resp = self.send(body).await?;
+        extract_text(&resp)
     }
 }
 
