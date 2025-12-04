@@ -422,9 +422,11 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             });
         }
 
-        // Check cooldown - BUT bypass if user has an unanswered message
-        // (we should always respond to direct user interaction)
-        if !user_unanswered
+        // Check cooldown - BUT bypass if:
+        // 1. User has an unanswered message (always respond to direct interaction)
+        // 2. VLA detected a significant change (something new happened worth commenting on)
+        let bypass_cooldown = user_unanswered || vla.significant_change;
+        if !bypass_cooldown
             && self.characters[responder_index]
                 .state
                 .is_on_cooldown(self.config.cooldown_after_speak())
