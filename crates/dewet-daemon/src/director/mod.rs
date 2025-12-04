@@ -14,7 +14,7 @@ use crate::{
     bridge::ChatPacket,
     character::{CharacterSpec, LoadedCharacter},
     config::DirectorConfig,
-    llm::{ChatMessage, LlmClients},
+    llm::{ChatMessage, LlmClients, strip_images_for_logging},
     observation::Observation,
     storage::{Storage, StoredDecision},
 };
@@ -473,8 +473,8 @@ Compare DESKTOP directly to the PREV panels. Answer ONE question:
             images,
         );
 
-        // Serialize messages for logging (before consuming them)
-        let response_prompt_json = serde_json::to_string_pretty(&response_messages)
+        // Serialize messages for logging (strip images to keep logs readable)
+        let response_prompt_json = serde_json::to_string_pretty(&strip_images_for_logging(&response_messages))
             .unwrap_or_else(|_| "(failed to serialize)".to_string());
 
         // Use chat completion for proper turn-taking

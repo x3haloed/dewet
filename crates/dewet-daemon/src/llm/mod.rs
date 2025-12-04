@@ -92,6 +92,34 @@ impl ChatMessage {
     }
 }
 
+/// Strip image data from messages for logging purposes.
+/// Replaces base64 image URLs with a placeholder to keep logs readable.
+pub fn strip_images_for_logging(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    messages
+        .iter()
+        .map(|msg| ChatMessage {
+            role: msg.role,
+            content: match &msg.content {
+                ChatContent::Text(s) => ChatContent::Text(s.clone()),
+                ChatContent::Multimodal(parts) => {
+                    let stripped: Vec<ContentPart> = parts
+                        .iter()
+                        .map(|part| match part {
+                            ContentPart::Text { text } => ContentPart::Text { text: text.clone() },
+                            ContentPart::ImageUrl { .. } => ContentPart::ImageUrl {
+                                image_url: ImageUrl {
+                                    url: "[image data stripped]".to_string(),
+                                },
+                            },
+                        })
+                        .collect();
+                    ChatContent::Multimodal(stripped)
+                }
+            },
+        })
+        .collect()
+}
+
 #[async_trait]
 pub trait LlmClient: Send + Sync {
     async fn complete_text(&self, model: &str, prompt: &str) -> Result<String>;
