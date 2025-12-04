@@ -5,10 +5,10 @@ use anyhow::{Result, anyhow};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use image::{DynamicImage, ImageFormat, RgbaImage};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     bridge::ChatPacket,
@@ -18,6 +18,30 @@ use crate::{
     observation::Observation,
     storage::{Storage, StoredDecision},
 };
+
+/// Result of VLA (Vision-Language Analysis)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VlaResult {
+    /// Whether something significant changed that warrants attention
+    pub significant_change: bool,
+    /// What changed (or "nothing significant" if no change)
+    pub description: String,
+}
+
+/// Eligibility status for a companion
+#[derive(Debug, Clone)]
+pub enum CompanionEligibility {
+    /// Companion is allowed to speak
+    Allow { reason: String },
+    /// Companion should not speak
+    Stop { reason: String },
+}
+
+impl CompanionEligibility {
+    pub fn is_allowed(&self) -> bool {
+        matches!(self, CompanionEligibility::Allow { .. })
+    }
+}
 
 pub struct Director {
     storage: Storage,
@@ -52,9 +76,180 @@ impl Director {
         &self.characters
     }
 
+    /// Step 1: VLA (Vision-Language Analysis) - determine if something significant changed
+    pub async fn analyze_vla(&self, observation: &Observation) -> Result<(VlaResult, PromptLog)> {
+        let composite = observation
+            .composite
+            .as_ref()
+            .ok_or_else(|| anyhow!("No composite image available for VLA"))?;
+
+        // Build image list: composite first, then ARIAOS if available
+        let mut images = vec![encode_rgba_to_base64(composite)?];
+        let has_ariaos = observation.ariaos.is_some();
+        if let Some(ariaos) = &observation.ariaos {
+            images.push(encode_rgba_to_base64(ariaos)?);
+        }
+
+        let prompt = if has_ariaos {
+            r#"You are a CHANGE DETECTOR. Your ONLY job: determine if something MEANINGFULLY DIFFERENT happened.
+
+**IMAGE 1 - COMPOSITE** layout:
+- DESKTOP (top-left): Current screen
+- PREV 1/2/3: Previous screenshots
+
+**IMAGE 2 - ARIAOS**: Companion's dashboard
+
+## YOUR TASK
+Compare DESKTOP directly to the PREV panels. Answer ONE question:
+**Is DESKTOP showing something MEANINGFULLY DIFFERENT from PREV?**
+
+### significant_change: TRUE only if:
+- User opened a DIFFERENT application (not just the same app with minor changes)
+- Completely NEW content appeared (new file, new webpage, new document)
+- An error, alert, or notification popped up
+- The ARIAOS notes content changed
+
+### significant_change: FALSE if:
+- Same application, same general content
+- Cursor position changed
+- Scroll position changed slightly  
+- Chat messages updated (we already see this in chat history)
+- Time passed but nothing substantive changed
+- Screen looks "basically the same"
+
+**DEFAULT TO FALSE.** Only mark true if you can point to a specific, concrete difference that a human would notice and find noteworthy."#
+        } else {
+            r#"You are a CHANGE DETECTOR. Your ONLY job: determine if something MEANINGFULLY DIFFERENT happened.
+
+**IMAGE 1 - COMPOSITE** layout:
+- DESKTOP (top-left): Current screen
+- PREV 1/2/3: Previous screenshots
+
+## YOUR TASK
+Compare DESKTOP directly to the PREV panels. Answer ONE question:
+**Is DESKTOP showing something MEANINGFULLY DIFFERENT from PREV?**
+
+### significant_change: TRUE only if:
+- User opened a DIFFERENT application (not just the same app with minor changes)
+- Completely NEW content appeared (new file, new webpage, new document)
+- An error, alert, or notification popped up
+
+### significant_change: FALSE if:
+- Same application, same general content
+- Cursor position changed
+- Scroll position changed slightly
+- Chat messages updated (we already see this in chat history)
+- Time passed but nothing substantive changed
+- Screen looks "basically the same"
+
+**DEFAULT TO FALSE.** Only mark true if you can point to a specific, concrete difference that a human would notice and find noteworthy."#
+        };
+
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "significant_change": {
+                    "type": "boolean",
+                    "description": "true if something meaningful changed, false otherwise"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Brief description of what changed (or 'nothing significant' if no change)"
+                }
+            },
+            "required": ["significant_change", "description"]
+        });
+
+        let response = self
+            .llm
+            .complete_vision_json(&self.models.decision, prompt, images, schema)
+            .await?;
+
+        let response_str = serde_json::to_string_pretty(&response).unwrap_or_default();
+        let prompt_log = PromptLog {
+            model_type: "vla".to_string(),
+            model_name: self.models.decision.clone(),
+            prompt: prompt.to_string(),
+            response: response_str,
+        };
+
+        let vla: VlaResult = serde_json::from_value(response)?;
+        info!(
+            significant_change = vla.significant_change,
+            description = %vla.description,
+            "VLA complete"
+        );
+
+        Ok((vla, prompt_log))
+    }
+
+    /// Step 2: Determine eligibility for each companion (algorithmic, no LLM)
+    fn compute_eligibility(
+        &self,
+        observation: &Observation,
+        vla: &VlaResult,
+    ) -> Vec<(String, CompanionEligibility)> {
+        let last_speaker = observation.recent_chat.last().map(|p| p.sender.as_str());
+        let long_silence_threshold = self.config.cooldown_after_speak();
+
+        self.characters
+            .iter()
+            .map(|c| {
+                let id = c.spec.id.clone();
+                let is_last_speaker = last_speaker == Some(id.as_str());
+
+                let eligibility = if is_last_speaker {
+                    // This companion spoke last
+                    let time_since_spoke = c.state.time_since_last_spoke();
+                    let long_time = time_since_spoke
+                        .map(|d| d > long_silence_threshold)
+                        .unwrap_or(true);
+
+                    if long_time {
+                        CompanionEligibility::Allow {
+                            reason: format!(
+                                "Last speaker, but {}s since speaking (threshold: {}s)",
+                                time_since_spoke.map(|d| d.as_secs()).unwrap_or(0),
+                                long_silence_threshold.as_secs()
+                            ),
+                        }
+                    } else if vla.significant_change {
+                        CompanionEligibility::Allow {
+                            reason: format!(
+                                "Last speaker, but VLA-YES: {}",
+                                vla.description
+                            ),
+                        }
+                    } else {
+                        CompanionEligibility::Stop {
+                            reason: format!(
+                                "Last speaker, only {}s ago, VLA-NO",
+                                time_since_spoke.map(|d| d.as_secs()).unwrap_or(0)
+                            ),
+                        }
+                    }
+                } else {
+                    // Different companion spoke last (or no one spoke yet)
+                    CompanionEligibility::Allow {
+                        reason: "Not last speaker".to_string(),
+                    }
+                };
+
+                debug!(
+                    companion = %id,
+                    eligibility = ?eligibility,
+                    "Computed eligibility"
+                );
+
+                (id, eligibility)
+            })
+            .collect()
+    }
+
     pub async fn evaluate(&mut self, observation: &Observation) -> Result<EvaluateResult> {
         let mut prompt_logs = Vec::new();
 
+        // Rate limiting check
         if self.last_decision.elapsed() < self.config.min_decision_interval() {
             return Ok(EvaluateResult {
                 decision: Decision::Pass {
@@ -66,15 +261,99 @@ impl Director {
         }
         self.last_decision = Instant::now();
 
-        // Build arbiter prompt with raw data only - no pre-baked VLM analysis
+        // Check if user just spoke (unanswered message)
+        let last_speaker = observation.recent_chat.last().map(|p| p.sender.as_str());
+        let user_unanswered = last_speaker == Some("user");
+
+        // STEP 1: VLA - Vision-Language Analysis
+        let vla = if observation.composite.is_some() {
+            match self.analyze_vla(observation).await {
+                Ok((result, log)) => {
+                    prompt_logs.push(log);
+                    result
+                }
+                Err(err) => {
+                    warn!(?err, "VLA failed, assuming no significant change");
+                    VlaResult {
+                        significant_change: false,
+                        description: format!("VLA failed: {}", err),
+                    }
+                }
+            }
+        } else {
+            VlaResult {
+                significant_change: false,
+                description: "No composite image available".to_string(),
+            }
+        };
+
+        // STEP 2: Compute eligibility for each companion
+        let eligibilities = self.compute_eligibility(observation, &vla);
+
+        // Filter to only ALLOW companions
+        let allowed_companions: Vec<_> = eligibilities
+            .iter()
+            .filter(|(_, e)| e.is_allowed())
+            .map(|(id, e)| (id.clone(), e.clone()))
+            .collect();
+
+        // If no companions are allowed, stop here
+        if allowed_companions.is_empty() {
+            let reasons: Vec<_> = eligibilities
+                .iter()
+                .filter_map(|(id, e)| match e {
+                    CompanionEligibility::Stop { reason } => Some(format!("{}: {}", id, reason)),
+                    _ => None,
+                })
+                .collect();
+
+            info!(
+                vla_change = vla.significant_change,
+                "No companions eligible to speak"
+            );
+
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: format!("No eligible companions. {}", reasons.join("; ")),
+                    urgency: 0.0,
+                },
+                prompt_logs,
+            });
+        }
+
+        // HARD GATE: If user has been silent for 5+ minutes AND no VLA change AND no unanswered user message,
+        // skip the arbiter entirely - there's clearly no stimulus worth responding to
+        let user_silence_threshold_secs = 300; // 5 minutes
+        if !user_unanswered 
+            && !vla.significant_change 
+            && observation.seconds_since_user_message > user_silence_threshold_secs
+        {
+            info!(
+                user_silence_secs = observation.seconds_since_user_message,
+                vla_change = vla.significant_change,
+                "No stimulus: user silent and no VLA change - skipping arbiter"
+            );
+
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: format!(
+                        "No stimulus: user silent for {}s, VLA detected no change",
+                        observation.seconds_since_user_message
+                    ),
+                    urgency: 0.0,
+                },
+                prompt_logs,
+            });
+        }
+
+        // STEP 3: Arbiter - given ALLOW companions, who (if anyone) should speak?
+        let arbiter_prompt = self.build_arbiter_prompt(observation, &vla, &allowed_companions, user_unanswered);
         let schema = arbiter_schema();
-        let arbiter_prompt = self.build_arbiter_prompt(observation);
         let response = self
             .llm
             .complete_json(&self.models.decision, &arbiter_prompt, schema)
             .await?;
-        
-        // Log the arbiter prompt/response
+
         let arbiter_response_str = serde_json::to_string_pretty(&response).unwrap_or_default();
         prompt_logs.push(PromptLog {
             model_type: "arbiter".to_string(),
@@ -86,87 +365,87 @@ impl Director {
         let arbiter: ArbiterDecision = serde_json::from_value(response)?;
 
         info!(
-            should_respond = arbiter.should_respond,
-            responder = ?arbiter.responder_id,
-            urgency = arbiter.urgency,
+            who_should_talk = ?arbiter.who_should_talk,
             reasoning = %arbiter.reasoning,
             "Arbiter decision"
         );
 
+        // Record the decision
+        let should_respond = arbiter.who_should_talk.is_some();
         self.storage
             .record_decision(&StoredDecision::now(
-                arbiter.should_respond,
-                arbiter.responder_id.clone(),
+                should_respond,
+                arbiter.who_should_talk.clone(),
                 arbiter.reasoning.clone(),
-                arbiter.urgency,
+                if should_respond { 0.5 } else { 0.0 },
             ))
             .await?;
 
-        if !arbiter.should_respond {
-            return Ok(EvaluateResult {
-                decision: Decision::Pass {
-                    reasoning: arbiter.reasoning,
-                    urgency: arbiter.urgency,
-                },
-                prompt_logs,
-            });
-        }
-
-        let responder_id = match &arbiter.responder_id {
-            Some(id) if !id.is_empty() => id.clone(),
+        // If arbiter says "none", we're done
+        let responder_id = match &arbiter.who_should_talk {
+            Some(id) if !id.is_empty() && id.to_lowercase() != "none" => id.clone(),
             _ => {
-                info!("Arbiter said respond but no responder_id given");
                 return Ok(EvaluateResult {
                     decision: Decision::Pass {
-                        reasoning: format!("{} (no responder_id)", arbiter.reasoning),
-                        urgency: arbiter.urgency,
+                        reasoning: arbiter.reasoning,
+                        urgency: 0.0,
                     },
                     prompt_logs,
                 });
             }
         };
 
-        let available_ids: Vec<_> = self.characters.iter().map(|c| c.spec.id.as_str()).collect();
+        // Validate the responder exists and is in the allowed list
         let Some(responder_index) = self
             .characters
             .iter()
             .position(|c| c.spec.id == responder_id)
         else {
-            warn!(responder_id = %responder_id, available = ?available_ids, "Responder not found in character list");
+            warn!(responder_id = %responder_id, "Arbiter chose unknown companion");
             return Ok(EvaluateResult {
                 decision: Decision::Pass {
-                    reasoning: format!("{} (responder '{}' not found)", arbiter.reasoning, responder_id),
-                    urgency: arbiter.urgency,
+                    reasoning: format!("{} (unknown companion '{}')", arbiter.reasoning, responder_id),
+                    urgency: 0.0,
                 },
                 prompt_logs,
             });
         };
 
-        {
-            let character = &self.characters[responder_index];
-            if character
-                .state
-                .is_on_cooldown(self.config.cooldown_after_speak())
-            {
-                info!(responder_id = %responder_id, "Character on cooldown, skipping");
-                return Ok(EvaluateResult {
-                    decision: Decision::Pass {
-                        reasoning: format!("{} (on cooldown)", arbiter.reasoning),
-                        urgency: arbiter.urgency,
-                    },
-                    prompt_logs,
-                });
-            }
+        if !allowed_companions.iter().any(|(id, _)| id == &responder_id) {
+            warn!(responder_id = %responder_id, "Arbiter chose ineligible companion");
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: format!("{} (companion '{}' not eligible)", arbiter.reasoning, responder_id),
+                    urgency: 0.0,
+                },
+                prompt_logs,
+            });
         }
 
+        // Check cooldown - BUT bypass if user has an unanswered message
+        // (we should always respond to direct user interaction)
+        if !user_unanswered
+            && self.characters[responder_index]
+                .state
+                .is_on_cooldown(self.config.cooldown_after_speak())
+        {
+            info!(responder_id = %responder_id, "Character on cooldown, skipping");
+            return Ok(EvaluateResult {
+                decision: Decision::Pass {
+                    reasoning: format!("{} (on cooldown)", arbiter.reasoning),
+                    urgency: 0.0,
+                },
+                prompt_logs,
+            });
+        }
+
+        // STEP 4: Generate response
         info!(responder_id = %responder_id, "Generating response...");
 
         let response_prompt =
             Self::build_response_prompt(&self.characters[responder_index].spec, observation);
-        
-        // Use vision model if composite image is available
+
         let mut text = if let Some(composite) = &observation.composite {
-            // Build list of images: composite first, then ARIAOS if available
             let mut images = vec![encode_rgba_to_base64(composite)?];
             if let Some(ariaos) = &observation.ariaos {
                 images.push(encode_rgba_to_base64(ariaos)?);
@@ -180,7 +459,6 @@ impl Director {
                 .await?
         };
 
-        // Log the response prompt/response
         prompt_logs.push(PromptLog {
             model_type: "response".to_string(),
             model_name: self.models.response.clone(),
@@ -188,6 +466,7 @@ impl Director {
             response: text.clone(),
         });
 
+        // Optional audit
         if let Some(audit_model) = &self.models.audit {
             text = match self
                 .run_audit(
@@ -204,7 +483,7 @@ impl Director {
                     return Ok(EvaluateResult {
                         decision: Decision::Pass {
                             reasoning: format!("{} (audit rejected: {})", arbiter.reasoning, err),
-                            urgency: arbiter.urgency,
+                            urgency: 0.0,
                         },
                         prompt_logs,
                     });
@@ -212,6 +491,7 @@ impl Director {
             };
         }
 
+        // Update character state
         if let Some(character) = self.characters.get_mut(responder_index) {
             character.state.update_last_spoke();
         }
@@ -221,8 +501,8 @@ impl Director {
                 character_id: responder_id,
                 reasoning: arbiter.reasoning,
                 text,
-                urgency: arbiter.urgency,
-                suggested_mood: arbiter.suggested_mood.clone(),
+                urgency: 0.5,
+                suggested_mood: None,
             },
             prompt_logs,
         })
@@ -268,25 +548,37 @@ impl Director {
         }
     }
 
-    fn build_arbiter_prompt(&self, observation: &Observation) -> String {
+    fn build_arbiter_prompt(
+        &self,
+        observation: &Observation,
+        vla: &VlaResult,
+        allowed_companions: &[(String, CompanionEligibility)],
+        user_unanswered: bool,
+    ) -> String {
         let chat = format_chat(&observation.recent_chat);
-        let character_section = self
-            .characters
+
+        // Build character section ONLY for allowed companions
+        let character_section = allowed_companions
             .iter()
-            .map(|c| {
-                let cooldown: String = if c.state.is_on_cooldown(self.config.cooldown_after_speak())
-                {
-                    "on cooldown".to_string()
-                } else {
-                    "available".to_string()
+            .filter_map(|(id, eligibility)| {
+                let character = self.characters.iter().find(|c| &c.spec.id == id)?;
+                let reason = match eligibility {
+                    CompanionEligibility::Allow { reason } => reason.clone(),
+                    _ => return None,
                 };
-                format!(
-                    "### {name} (id: {id})\nPersonality: {personality}\nStatus: {cooldown}\n",
-                    name = c.spec.name,
-                    id = c.spec.id,
-                    personality = truncate(&c.spec.personality, 240),
-                    cooldown = cooldown
-                )
+                Some(format!(
+                    "### {name} (id: {id})\n\
+                    Personality: {personality}\n\
+                    Description: {description}\n\
+                    Scenario: {scenario}\n\
+                    Eligible because: {reason}\n",
+                    name = character.spec.name,
+                    id = character.spec.id,
+                    personality = truncate(&character.spec.personality, 300),
+                    description = truncate(&character.spec.description, 200),
+                    scenario = truncate(&character.spec.scenario, 200),
+                    reason = reason
+                ))
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -300,33 +592,57 @@ impl Director {
             format!("{}s since user last spoke.", observation.seconds_since_user_message)
         };
 
-        // Check if last message in chat is from user (unanswered)
         let last_speaker = observation.recent_chat.last().map(|p| p.sender.as_str());
-        let unanswered_user = last_speaker == Some("user");
+
+        // VLA summary
+        let vla_summary = if vla.significant_change {
+            format!("**VLA: SIGNIFICANT CHANGE DETECTED**\n{}", vla.description)
+        } else {
+            format!("**VLA: No significant change**\n{}", vla.description)
+        };
 
         format!(
-            "You orchestrate Dewet companions. Decide whether anyone should speak.\n\n\
-            # Understanding the Composite Image\n\
-            The image shows the user's context in multiple panels:\n\
-            - **DESKTOP**: Current screen capture\n\
-            - **PREV 1/2/3** (if present): Historical screenshots from when companions last responded - compare these to DESKTOP to see what changed\n\
-            - **RECENT CHAT**: Conversation history\n\
-            - **MEMORY/STATUS**: Context visualization\n\n\
-            # Screen Data\n{screen}\n\
-            **Timing**: {silence}\n\
-            **Last speaker**: {last_speaker}\n\n\
-            # Recent Chat\n{chat}\n\n\
-            # Companions\n{companions}\n\n\
-            ## When to Respond (ONLY if one of these is true)\n\
-            1. **Unanswered user message**: The user said something that appears to be addressing a companion (question, greeting, request) and no companion has responded yet.\n\
-            2. **Significant context change**: Comparing DESKTOP to the PREV panels shows something meaningfully different happened (new app, new content, completed task, error appeared) that a companion would naturally comment on.\n\n\
-            ## When NOT to Respond\n\
-            - Nothing significant changed since the last PREV screenshot\n\
-            - The last chat message was from the same companion (don't pile on)\n\
-            **Default to should_respond: false** unless criterion 1 or 2 clearly applies.",
-            screen = observation.screen_summary.notes,
+            r#"You are the Arbiter for Dewet companions. Your job: decide WHO (if anyone) should speak.
+
+# Context Analysis
+{vla}
+
+# Timing
+{silence}
+Last speaker: {last_speaker}
+
+# Recent Chat
+{chat}
+
+# Eligible Companions
+These companions have passed eligibility checks and MAY speak:
+{companions}
+
+# Your Decision
+
+You must choose ONE of:
+1. **A specific companion ID** - if that companion has something valuable to say
+2. **"none"** - if silence is the better choice
+
+## When to pick a companion:
+- User asked a question or made a comment that deserves a response
+- VLA detected a significant change that a companion would naturally comment on
+- A companion has unique insight relevant to the current context
+
+## When to pick "none":
+- The recent chat shows the companion already commented on this topic
+- Nothing new has happened worth discussing
+- The user appears focused and shouldn't be interrupted
+- Any response would feel repetitive or forced
+
+**Default to "none" unless there's a clear reason to speak.**"#,
+            vla = vla_summary,
             silence = silence_note,
-            last_speaker = if unanswered_user { "user (UNANSWERED)" } else { last_speaker.unwrap_or("none") },
+            last_speaker = if user_unanswered { 
+                "user (UNANSWERED - prioritize responding!)" 
+            } else { 
+                last_speaker.unwrap_or("none") 
+            },
             chat = chat,
             companions = character_section
         )
@@ -408,25 +724,24 @@ fn arbiter_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "should_respond": { "type": "boolean" },
-            "responder_id": { "type": "string", "description": "Character ID who should respond, or empty string if no one" },
-            "reasoning": { "type": "string" },
-            "suggested_mood": { "type": "string", "description": "Suggested mood, or empty string for neutral" },
-            "urgency": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+            "who_should_talk": { 
+                "type": "string", 
+                "description": "The companion ID who should speak, or 'none' if no one should" 
+            },
+            "reasoning": { 
+                "type": "string",
+                "description": "Brief explanation of why this companion should speak (or why no one should)"
+            }
         },
-        "required": ["should_respond", "responder_id", "reasoning", "suggested_mood", "urgency"]
+        "required": ["who_should_talk", "reasoning"]
     })
 }
 
 #[derive(Debug, Deserialize)]
 struct ArbiterDecision {
-    should_respond: bool,
     #[serde(deserialize_with = "deserialize_optional_string")]
-    responder_id: Option<String>,
+    who_should_talk: Option<String>,
     reasoning: String,
-    #[serde(deserialize_with = "deserialize_optional_string")]
-    suggested_mood: Option<String>,
-    urgency: f32,
 }
 
 #[derive(Debug, Deserialize)]

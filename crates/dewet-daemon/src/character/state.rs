@@ -25,6 +25,10 @@ impl CharacterState {
             .map(|ts| ts.elapsed() < cooldown)
             .unwrap_or(false)
     }
+
+    pub fn time_since_last_spoke(&self) -> Option<Duration> {
+        self.last_spoke_at.map(|ts| ts.elapsed())
+    }
 }
 
 #[derive(Debug, Clone)]

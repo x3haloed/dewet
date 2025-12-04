@@ -21,7 +21,7 @@ auth_token_env = "TURSO_AUTH_TOKEN"
 
 [director]
 min_decision_interval_ms = 2000
-cooldown_after_speak_ms = 30000
+cooldown_after_speak_ms = 120000
 
 [llm]
 provider = { type = "openrouter", api_key_env = "OPENROUTER_API_KEY", site_url = "https://dewet.dev", site_name = "Dewet" }
